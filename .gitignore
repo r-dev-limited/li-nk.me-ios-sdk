@@ -23,3 +23,33 @@ java_pid*.hprof
 hs_err_pid*.log
 replay_pid*.log
 
+# IDE
+.idea/
+.vscode/
+**/*.xcuserstate
+
+# Package managers
+Pods/
+Carthage/
+Carthage/Build/
+Carthage/Checkouts/
+
+# Archives and symbols
+*.xcarchive
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*
+fastlane/test_output/**/*
+fastlane/readme.md
+
+# Misc
+*.moved-aside
+*.swp
+*.mobileprovision
+*.provisionprofile
+
