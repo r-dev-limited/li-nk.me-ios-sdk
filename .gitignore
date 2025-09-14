@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode user data
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+
+# Xcode derived data (if placed inside repo by custom settings)
+DerivedData/
+
+# Example app build products
+**/Build/
+
+# Java heap dumps (safety)
+java_pid*.hprof
+*.hprof
+hs_err_pid*.log
+replay_pid*.log
+
