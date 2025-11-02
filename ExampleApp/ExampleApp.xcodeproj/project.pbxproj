@@ -11,6 +11,14 @@
 		A00000022000000100A00001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000032000000100A00001 /* ContentView.swift */; };
 		A00000082000000100A00001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000072000000100A00001 /* Assets.xcassets */; };
 		A000000C2000000100A00001 /* LinkMeKit in Frameworks */ = {isa = PBXBuildFile; productRef = A000000B2000000100A00001 /* LinkMeKit */; };
+		A000001A2000000100A00001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000192000000100A00001 /* AppState.swift */; };
+		A000001B2000000100A00001 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000001C2000000100A00001 /* RootView.swift */; };
+		A000001D2000000100A00001 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000001E2000000100A00001 /* HomeView.swift */; };
+		A000001F2000000100A00001 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000202000000100A00001 /* ProfileView.swift */; };
+		A00000212000000100A00001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000222000000100A00001 /* SettingsView.swift */; };
+		A00000232000000100A00001 /* LinkInfoCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000242000000100A00001 /* LinkInfoCard.swift */; };
+		A00000252000000100A00001 /* ButtonStyleModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000262000000100A00001 /* ButtonStyleModifier.swift */; };
+		A00000272000000100A00001 /* PathChangeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000282000000100A00001 /* PathChangeModifier.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -20,6 +28,14 @@
 		A00000072000000100A00001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A000000A2000000100A00001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A00000112000000100A00001 /* ExampleApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ExampleApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000192000000100A00001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		A000001C2000000100A00001 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A000001E2000000100A00001 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		A00000202000000100A00001 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		A00000222000000100A00001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A00000242000000100A00001 /* LinkInfoCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkInfoCard.swift; sourceTree = "<group>"; };
+		A00000262000000100A00001 /* ButtonStyleModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonStyleModifier.swift; sourceTree = "<group>"; };
+		A00000282000000100A00001 /* PathChangeModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PathChangeModifier.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -40,6 +56,14 @@
 				411A6C502E72E3C500B1CC8B /* ExampleApp.entitlements */,
 				A00000002000000100A00001 /* ExampleAppApp.swift */,
 				A00000032000000100A00001 /* ContentView.swift */,
+				A00000192000000100A00001 /* AppState.swift */,
+				A000001C2000000100A00001 /* RootView.swift */,
+				A000001E2000000100A00001 /* HomeView.swift */,
+				A00000202000000100A00001 /* ProfileView.swift */,
+				A00000222000000100A00001 /* SettingsView.swift */,
+				A00000242000000100A00001 /* LinkInfoCard.swift */,
+				A00000262000000100A00001 /* ButtonStyleModifier.swift */,
+				A00000282000000100A00001 /* PathChangeModifier.swift */,
 				A00000072000000100A00001 /* Assets.xcassets */,
 				A000000A2000000100A00001 /* Info.plist */,
 			);
@@ -140,6 +164,14 @@
 			files = (
 				A00000022000000100A00001 /* ContentView.swift in Sources */,
 				A00000012000000100A00001 /* ExampleAppApp.swift in Sources */,
+				A000001A2000000100A00001 /* AppState.swift in Sources */,
+				A000001B2000000100A00001 /* RootView.swift in Sources */,
+				A000001D2000000100A00001 /* HomeView.swift in Sources */,
+				A000001F2000000100A00001 /* ProfileView.swift in Sources */,
+				A00000212000000100A00001 /* SettingsView.swift in Sources */,
+				A00000232000000100A00001 /* LinkInfoCard.swift in Sources */,
+				A00000252000000100A00001 /* ButtonStyleModifier.swift in Sources */,
+				A00000272000000100A00001 /* PathChangeModifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -260,6 +292,7 @@
 				DEVELOPMENT_TEAM = L7Z54669D7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ExampleApp/Info.plist;
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "This identifier helps attribute link opens and improve experience.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -269,7 +302,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = nz.co.rdev.example;
+				PRODUCT_BUNDLE_IDENTIFIER = me.link.example;
 				PRODUCT_NAME = ExampleApp;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -288,6 +321,7 @@
 				DEVELOPMENT_TEAM = L7Z54669D7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ExampleApp/Info.plist;
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "This identifier helps attribute link opens and improve experience.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -297,7 +331,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = nz.co.rdev.example;
+				PRODUCT_BUNDLE_IDENTIFIER = me.link.example;
 				PRODUCT_NAME = ExampleApp;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
