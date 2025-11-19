@@ -57,6 +57,11 @@ struct ExampleAppApp: App {
                 if let path = payload.path {
                     appState.navigateToPath(path)
                 }
+                
+                // EXAMPLE: Log to Analytics
+                // This helper demonstrates how to map to Firebase and PostHog
+                AnalyticsHelper.logToAnalytics(payload: payload)
+            }
             }
         }
         
@@ -79,6 +84,7 @@ struct ExampleAppApp: App {
                     if let path = p.path {
                         appState.navigateToPath(path)
                     }
+                    AnalyticsHelper.logToAnalytics(payload: p)
                 } else {
                     LinkMe.shared.claimDeferredIfAvailable { deferredPayload in
                         DispatchQueue.main.async {
@@ -88,6 +94,7 @@ struct ExampleAppApp: App {
                                 if let path = p.path {
                                     appState.navigateToPath(path)
                                 }
+                                AnalyticsHelper.logToAnalytics(payload: p)
                             }
                         }
                     }
