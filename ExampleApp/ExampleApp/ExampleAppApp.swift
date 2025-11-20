@@ -35,9 +35,9 @@ struct ExampleAppApp: App {
     private func initializeLinkMe() {
         print("[LinkMe Example] Initializing LinkMe SDK")
         
-        let baseUrl = URL(string: "https://0jk2u2h9.li-nk.me")!
-        let appId = "0jk2u2h9"
-        let appKey = "ak_CgJwMBftYHC_7_WU8i-zIQb4a3OXZ4yqazp87iF2uus"
+        let baseUrl = URL(string: "https://e0qcsxfc.li-nk.me")!
+        let appId = "e0qcsxfc"
+        let appKey = "ak_nMqCl4QwFSVvjC5VrrAvTH0ziWH06WLhua6EtCvFO6o"
         
         LinkMe.shared.configure(config: .init(
             baseUrl: baseUrl,
