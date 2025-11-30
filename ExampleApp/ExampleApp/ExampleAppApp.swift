@@ -39,11 +39,12 @@ struct ExampleAppApp: App {
         let appId = "e0qcsxfc"
         let appKey = "ak_nMqCl4QwFSVvjC5VrrAvTH0ziWH06WLhua6EtCvFO6o"
         
+        // Note: Pasteboard is now controlled from the Portal (App Settings → iOS)
+        // The SDK automatically checks pasteboard on claimDeferredIfAvailable()
         LinkMe.shared.configure(config: .init(
             baseUrl: baseUrl,
             appId: appId,
             appKey: appKey,
-            enablePasteboard: false,
             sendDeviceInfo: true,
             includeVendorId: true,
             includeAdvertisingId: false
