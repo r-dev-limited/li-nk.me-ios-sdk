@@ -40,6 +40,9 @@ public final class LinkMe: @unchecked Sendable {
     public let baseUrl: URL
     public let appId: String?
     public let appKey: String?
+    /// @deprecated Pasteboard is now controlled from the Portal (App Settings → iOS).
+    /// The SDK automatically checks pasteboard in claimDeferredIfAvailable(). This parameter is ignored.
+    @available(*, deprecated, message: "Pasteboard is now controlled from the Portal. This parameter is ignored.")
     public let enablePasteboard: Bool
     public let sendDeviceInfo: Bool
     public let includeVendorId: Bool
@@ -131,6 +134,26 @@ public final class LinkMe: @unchecked Sendable {
       completion(nil)
       return
     }
+    
+    // First, try to read cid from pasteboard (set by li-nk.me during App Store redirect)
+    #if canImport(UIKit)
+    if let cid = readPasteboardCid() {
+      print("[LinkMeKit] Found cid in pasteboard, using direct claim")
+      resolveCidWithCompletion(cid, completion: completion)
+      return
+    }
+    #endif
+    
+    // Fallback to fingerprint-based claim
+    print("[LinkMeKit] No pasteboard cid, using fingerprint claim")
+    claimViaFingerprint(completion: completion)
+  }
+  
+  private func claimViaFingerprint(completion: @escaping (LinkPayload?) -> Void) {
+    guard let cfg = config else {
+      completion(nil)
+      return
+    }
     let url = cfg.baseUrl.appendingPathComponent("api/deferred/claim")
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
@@ -170,6 +193,58 @@ public final class LinkMe: @unchecked Sendable {
       print("[LinkMeKit] deferred claim payload=\(p)")
       self.emit(payload: p)
       completion(p)
+    }.resume()
+  }
+  
+  private func resolveCidWithCompletion(_ cid: String, completion: @escaping (LinkPayload?) -> Void) {
+    guard let cfg = config else {
+      completion(nil)
+      return
+    }
+    var comp = URLComponents(
+      url: cfg.baseUrl.appendingPathComponent("api/deeplink"), resolvingAgainstBaseURL: false)!
+    comp.queryItems = [URLQueryItem(name: "cid", value: cid)]
+    guard let url = comp.url else {
+      completion(nil)
+      return
+    }
+    var req = URLRequest(url: url)
+    setHeaders(on: &req)
+    if let dev = buildDevicePayload(), cfg.sendDeviceInfo {
+      if let json = try? JSONSerialization.data(withJSONObject: dev),
+        let s = String(data: json, encoding: .utf8)
+      {
+        req.setValue(s, forHTTPHeaderField: "x-linkme-device")
+      }
+    }
+    print("[LinkMeKit] GET /api/deeplink?cid=\(cid) (from pasteboard)")
+    URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+      if let err = err {
+        print("[LinkMeKit] pasteboard cid claim error=\(err.localizedDescription)")
+        completion(nil)
+        return
+      }
+      guard let http = resp as? HTTPURLResponse else {
+        print("[LinkMeKit] pasteboard cid claim no response")
+        completion(nil)
+        return
+      }
+      if !(200..<300).contains(http.statusCode) {
+        let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        print("[LinkMeKit] pasteboard cid claim status=\(http.statusCode) body=\(body)")
+        completion(nil)
+        return
+      }
+      guard let self = self, let data = data,
+        let payload = try? JSONDecoder().decode(LinkPayload.self, from: data)
+      else {
+        print("[LinkMeKit] pasteboard cid claim decode failed")
+        completion(nil)
+        return
+      }
+      print("[LinkMeKit] pasteboard cid claim payload=\(payload)")
+      self.emit(payload: payload)
+      completion(payload)
     }.resume()
   }
 
@@ -387,12 +462,22 @@ public final class LinkMe: @unchecked Sendable {
 
   #if canImport(UIKit)
     private func tryReadPasteboardToken() {
+      guard let cid = readPasteboardCid() else { return }
+      resolveCid(cid)
+    }
+    
+    /// Reads a cid from pasteboard if it contains a valid li-nk.me URL
+    private func readPasteboardCid() -> String? {
       guard let str = UIPasteboard.general.string,
         let url = URL(string: str),
+        // Only accept URLs from our domain (li-nk.me or subdomain)
+        let host = url.host?.lowercased(),
+        host.hasSuffix("li-nk.me") || host == "li-nk.me",
         let cid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(
-          where: { $0.name == "cid" })?.value
-      else { return }
-      resolveCid(cid)
+          where: { $0.name == "cid" })?.value,
+        !cid.isEmpty
+      else { return nil }
+      return cid
     }
   #endif
 }
