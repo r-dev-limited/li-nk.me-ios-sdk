@@ -5,12 +5,14 @@ Pod::Spec.new do |s|
   s.license      = { :type => "Apache-2.0" }
   s.author       = { "LinkMe" => "support@li-nk.me" }
   s.homepage     = "https://li-nk.me"
-  s.source       = { :path => "." }
-
-  s.platform     = :ios, '13.0'
+  s.platform     = :ios, '14.0'
   s.swift_version = "5.9"
 
   s.source_files = [
     "Sources/LinkMeKit/**/*.swift"
   ]
+  s.source = {
+    :git => "https://github.com/r-dev-limited/li-nk.me-ios-sdk.git",
+    :tag => s.version.to_s
+  }
 end

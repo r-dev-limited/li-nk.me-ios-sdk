@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "ios-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Release iOS SDK
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: sdks/iOS
+    env:
+      COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag matches LinkMeKit.podspec
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          if [[ "$TAG" == ios-v* ]]; then
+            TAG_VERSION="${TAG#ios-v}"
+          elif [[ "$TAG" == v* ]]; then
+            TAG_VERSION="${TAG#v}"
+          else
+            echo "Tag '${TAG}' must start with 'v' or 'ios-v'." >&2
+            exit 1
+          fi
+
+          SPEC_VERSION=$(python3 - <<'PY'
+import pathlib, re
+spec = pathlib.Path("LinkMeKit/LinkMeKit.podspec").read_text()
+match = re.search(r's\.version\s*=\s*"([^"]+)"', spec)
+if not match:
+    raise SystemExit("Unable to find s.version inside LinkMeKit.podspec")
+print(match.group(1))
+PY
+)
+
+          echo "Tag version: ${TAG_VERSION}"
+          echo "Podspec version: ${SPEC_VERSION}"
+
+          if [[ "${TAG_VERSION}" != "${SPEC_VERSION}" ]]; then
+            echo "Tag (${TAG_VERSION}) does not match LinkMeKit.podspec version (${SPEC_VERSION})." >&2
+            exit 1
+          fi
+
+      - name: Swift tests
+        shell: bash
+        run: |
+          pushd LinkMeKit
+          swift test
+          popd
+
+      - name: Build ExampleApp
+        shell: bash
+        run: |
+          xcodebuild \
+            -project ExampleApp/ExampleApp.xcodeproj \
+            -scheme ExampleApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            build
+
+      - name: Pod lib lint
+        shell: bash
+        run: |
+          pushd LinkMeKit
+          pod lib lint LinkMeKit.podspec --allow-warnings
+          popd
+
+      - name: Pod trunk push
+        shell: bash
+        run: |
+          pushd LinkMeKit
+          pod trunk push LinkMeKit.podspec --allow-warnings
+          popd
