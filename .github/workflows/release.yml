@@ -63,7 +63,7 @@ jobs:
             exit 1
           fi
 
-          SPEC_VERSION=$(grep -E '^\s*s\.version\s*=' LinkMeKit/LinkMeKit.podspec | sed -E 's/.*s\.version\s*=\s*"([^"]+)".*/\1/')
+          SPEC_VERSION=$(awk -F'"' '/s\.version/ {print $2}' LinkMeKit/LinkMeKit.podspec)
 
           echo "Tag version: ${TAG_VERSION}"
           echo "Podspec version: ${SPEC_VERSION}"
