@@ -29,7 +29,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-tags: true
+
+      - name: Verify tag exists
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag '$TAG' not found. Fetching all tags..."
+            git fetch --tags
+            if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+              echo "Error: Tag '$TAG' does not exist in the repository." >&2
+              echo "Available tags:" >&2
+              git tag -l | head -20 >&2
+              exit 1
+            fi
+          fi
+          git checkout "$TAG"
 
       - name: Validate tag matches LinkMeKit.podspec
         shell: bash
