@@ -63,7 +63,12 @@ jobs:
             exit 1
           fi
 
-          SPEC_VERSION=$(awk -F'"' '/^\s*s\.version/ {print $2; exit}' LinkMeKit/LinkMeKit.podspec)
+          SPEC_FILE="LinkMeKit/LinkMeKit.podspec"
+          if [[ ! -f "$SPEC_FILE" ]]; then
+            SPEC_FILE="LinkMeKit.podspec"
+          fi
+
+          SPEC_VERSION=$(awk -F'"' '/^[[:space:]]*s\.version/ {print $2; exit}' "$SPEC_FILE")
 
           echo "Tag version: ${TAG_VERSION}"
           echo "Podspec version: ${SPEC_VERSION}"
