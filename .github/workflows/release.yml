@@ -38,15 +38,7 @@ jobs:
             exit 1
           fi
 
-          SPEC_VERSION=$(python3 - <<'PY'
-import pathlib, re
-spec = pathlib.Path("LinkMeKit/LinkMeKit.podspec").read_text()
-match = re.search(r's\.version\s*=\s*"([^"]+)"', spec)
-if not match:
-    raise SystemExit("Unable to find s.version inside LinkMeKit.podspec")
-print(match.group(1))
-PY
-)
+          SPEC_VERSION=$(grep -E '^\s*s\.version\s*=' LinkMeKit/LinkMeKit.podspec | sed -E 's/.*s\.version\s*=\s*"([^"]+)".*/\1/')
 
           echo "Tag version: ${TAG_VERSION}"
           echo "Podspec version: ${SPEC_VERSION}"
