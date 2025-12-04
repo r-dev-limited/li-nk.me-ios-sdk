@@ -9,7 +9,8 @@ Pod::Spec.new do |s|
   s.swift_version = "5.9"
 
   s.source_files = [
-    "Sources/LinkMeKit/**/*.swift"
+    "Sources/LinkMeKit/**/*.swift",
+    "LinkMeKit/Sources/LinkMeKit/**/*.swift"
   ]
   s.source = {
     :git => "https://github.com/r-dev-limited/li-nk.me-ios-sdk.git",
