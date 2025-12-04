@@ -73,6 +73,13 @@ jobs:
             exit 1
           fi
 
+      - name: Build Swift Package (validate compilation)
+        shell: bash
+        run: |
+          pushd LinkMeKit
+          swift build
+          popd
+
       - name: Swift tests
         shell: bash
         run: |

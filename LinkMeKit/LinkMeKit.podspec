@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "LinkMeKit"
-  s.version      = "0.1.1"
+  s.version      = "0.1.2"
   s.summary      = "LinkMe iOS SDK (Swift)"
   s.license      = { :type => "Apache-2.0" }
   s.author       = { "LinkMe" => "support@li-nk.me" }
