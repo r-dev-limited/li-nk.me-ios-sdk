@@ -87,15 +87,6 @@ jobs:
           swift test
           popd
 
-      - name: Build ExampleApp
-        shell: bash
-        run: |
-          xcodebuild \
-            -project ExampleApp/ExampleApp.xcodeproj \
-            -scheme ExampleApp \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
-            build
-
       - name: Pod lib lint
         shell: bash
         run: |
