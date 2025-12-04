@@ -13,6 +13,6 @@ Pod::Spec.new do |s|
   ]
   s.source = {
     :git => "https://github.com/r-dev-limited/li-nk.me-ios-sdk.git",
-    :tag => s.version.to_s
+    :tag => "v#{s.version}"
   }
 end
