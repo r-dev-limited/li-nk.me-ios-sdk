@@ -19,9 +19,6 @@ jobs:
   release:
     name: Release iOS SDK
     runs-on: macos-14
-    defaults:
-      run:
-        working-directory: sdks/iOS
     env:
       COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
     steps:
