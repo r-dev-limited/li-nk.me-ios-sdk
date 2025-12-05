@@ -130,7 +130,7 @@ public final class LinkMe: @unchecked Sendable {
   #endif
 
   public func claimDeferredIfAvailable(completion: @escaping (LinkPayload?) -> Void) {
-    guard let cfg = config else {
+    guard config != nil else {
       completion(nil)
       return
     }
@@ -420,9 +420,10 @@ public final class LinkMe: @unchecked Sendable {
     // We do not request ATT here; integrator should enable this flag only after user consent.
     if advertisingConsentEnabled {
       consent["advertising"] = true
-      #if canImport(AdSupport)
+      #if canImport(AdSupport) && !os(macOS)
         #if canImport(AppTrackingTransparency)
           if #available(iOS 14, *) {
+            #if !os(macOS)
             if ATTrackingManager.trackingAuthorizationStatus == .authorized {
               let idfa = ASIdentifierManager.shared().advertisingIdentifier.uuidString
               if idfa != "00000000-0000-0000-0000-000000000000" {
@@ -430,7 +431,21 @@ public final class LinkMe: @unchecked Sendable {
                 dev["device_id"] = idfa
               }
             }
+            #endif
           } else {
+            #if !os(macOS)
+            if ASIdentifierManager.shared().isAdvertisingTrackingEnabled {
+              let idfa = ASIdentifierManager.shared().advertisingIdentifier.uuidString
+              if idfa != "00000000-0000-0000-0000-000000000000" {
+                dev["id_type"] = "idfa"
+                dev["device_id"] = idfa
+              }
+            }
+            #endif
+          }
+        #else
+          #if !os(macOS) && !targetEnvironment(macCatalyst)
+          if #available(iOS 6, *) {
             if ASIdentifierManager.shared().isAdvertisingTrackingEnabled {
               let idfa = ASIdentifierManager.shared().advertisingIdentifier.uuidString
               if idfa != "00000000-0000-0000-0000-000000000000" {
@@ -439,6 +454,7 @@ public final class LinkMe: @unchecked Sendable {
               }
             }
           }
+          #endif
         #endif
       #endif
     }
