@@ -47,6 +47,7 @@ public final class LinkMe: @unchecked Sendable {
     public let sendDeviceInfo: Bool
     public let includeVendorId: Bool
     public let includeAdvertisingId: Bool
+    public let debug: Bool
     public init(
       baseUrl: URL,
       appId: String? = nil,
@@ -54,7 +55,8 @@ public final class LinkMe: @unchecked Sendable {
       enablePasteboard: Bool = false,
       sendDeviceInfo: Bool = true,
       includeVendorId: Bool = true,
-      includeAdvertisingId: Bool = false
+      includeAdvertisingId: Bool = false,
+      debug: Bool = false
     ) {
       self.baseUrl = baseUrl
       self.appId = appId
@@ -63,6 +65,7 @@ public final class LinkMe: @unchecked Sendable {
       self.sendDeviceInfo = sendDeviceInfo
       self.includeVendorId = includeVendorId
       self.includeAdvertisingId = includeAdvertisingId
+      self.debug = debug
     }
   }
 
@@ -74,9 +77,27 @@ public final class LinkMe: @unchecked Sendable {
   private let queue = DispatchQueue(label: "me.link.linkmekit")
   private var advertisingConsentEnabled: Bool = false
   private var isReady: Bool = false
+  private var debugEnabled: Bool { config?.debug ?? false }
+
+  private func debugLog(_ message: String, extra: [String: Any?]? = nil) {
+    guard debugEnabled else { return }
+    if let extra, !extra.isEmpty {
+      print("[LinkMeKit] \(message) \(extra)")
+    } else {
+      print("[LinkMeKit] \(message)")
+    }
+  }
 
   public func configure(config: Config) {
     self.config = config
+    debugLog(
+      "Configured",
+      extra: [
+        "baseUrl": config.baseUrl.absoluteString,
+        "appId": config.appId ?? "none",
+        "debug": config.debug
+      ]
+    )
     // Initialize advertising consent from config flag; can be overridden later
     self.advertisingConsentEnabled = config.includeAdvertisingId
     // Configure now acts as "setReady": set config and begin processing queued links
@@ -138,14 +159,14 @@ public final class LinkMe: @unchecked Sendable {
     // First, try to read cid from pasteboard (set by li-nk.me during App Store redirect)
     #if canImport(UIKit)
     if let cid = readPasteboardCid() {
-      print("[LinkMeKit] Found cid in pasteboard, using direct claim")
+      debugLog("Found cid in pasteboard, using direct claim")
       resolveCidWithCompletion(cid, completion: completion)
       return
     }
     #endif
     
     // Fallback to fingerprint-based claim
-    print("[LinkMeKit] No pasteboard cid, using fingerprint claim")
+    debugLog("No pasteboard cid, using fingerprint claim")
     claimViaFingerprint(completion: completion)
   }
   
@@ -165,32 +186,35 @@ public final class LinkMe: @unchecked Sendable {
     if let dev = buildDevicePayload(), cfg.sendDeviceInfo { payload["device"] = dev }
     req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    print("[LinkMeKit] POST /api/deferred/claim payload=\(payload)")
+    debugLog("POST /api/deferred/claim", extra: ["payload": payload])
     URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
       if let err = err {
-        print("[LinkMeKit] deferred error=\(err.localizedDescription)")
+        self?.debugLog("Deferred claim error", extra: ["error": err.localizedDescription])
         completion(nil)
         return
       }
       guard let http = resp as? HTTPURLResponse else {
-        print("[LinkMeKit] deferred no response")
+        self?.debugLog("Deferred claim missing HTTP response")
         completion(nil)
         return
       }
       if !(200..<300).contains(http.statusCode) {
         let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        print("[LinkMeKit] deferred status=\(http.statusCode) body=\(body)")
+        self?.debugLog(
+          "Deferred claim HTTP error",
+          extra: ["status": http.statusCode, "body": body]
+        )
         completion(nil)
         return
       }
       guard let self = self, let data = data,
         let p = try? JSONDecoder().decode(LinkPayload.self, from: data)
       else {
-        print("[LinkMeKit] deferred decode failed")
+        self?.debugLog("Deferred claim decode failed")
         completion(nil)
         return
       }
-      print("[LinkMeKit] deferred claim payload=\(p)")
+      self.debugLog("Deferred claim payload received", extra: ["linkId": p.linkId ?? "none"])
       self.emit(payload: p)
       completion(p)
     }.resume()
@@ -217,32 +241,38 @@ public final class LinkMe: @unchecked Sendable {
         req.setValue(s, forHTTPHeaderField: "x-linkme-device")
       }
     }
-    print("[LinkMeKit] GET /api/deeplink?cid=\(cid) (from pasteboard)")
+    debugLog("GET /api/deeplink for cid", extra: ["cid": cid, "source": "pasteboard"])
     URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
       if let err = err {
-        print("[LinkMeKit] pasteboard cid claim error=\(err.localizedDescription)")
+        self?.debugLog("Pasteboard cid claim error", extra: ["error": err.localizedDescription])
         completion(nil)
         return
       }
       guard let http = resp as? HTTPURLResponse else {
-        print("[LinkMeKit] pasteboard cid claim no response")
+        self?.debugLog("Pasteboard cid claim missing response")
         completion(nil)
         return
       }
       if !(200..<300).contains(http.statusCode) {
         let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        print("[LinkMeKit] pasteboard cid claim status=\(http.statusCode) body=\(body)")
+        self?.debugLog(
+          "Pasteboard cid HTTP error",
+          extra: ["status": http.statusCode, "body": body]
+        )
         completion(nil)
         return
       }
       guard let self = self, let data = data,
         let payload = try? JSONDecoder().decode(LinkPayload.self, from: data)
       else {
-        print("[LinkMeKit] pasteboard cid claim decode failed")
+        self?.debugLog("Pasteboard cid claim decode failed")
         completion(nil)
         return
       }
-      print("[LinkMeKit] pasteboard cid claim payload=\(payload)")
+      self.debugLog(
+        "Pasteboard cid claim payload received",
+        extra: ["linkId": payload.linkId ?? "none"]
+      )
       self.emit(payload: payload)
       completion(payload)
     }.resume()
@@ -279,18 +309,21 @@ public final class LinkMe: @unchecked Sendable {
     queue.async { [weak self] in
       guard let self = self else { return }
       guard self.config != nil, self.isReady else {
-        print(
-          "[LinkMeKit] queueing URL=\(url.absoluteString) ready=\(self.isReady) cfg=\(self.config != nil)"
+        self.debugLog(
+          "Queueing URL",
+          extra: ["url": url.absoluteString, "ready": self.isReady, "hasConfig": self.config != nil]
         )
         self.pendingURLs.append(url)
         return
       }
-      print("[LinkMeKit] processing URL=\(url.absoluteString)")
+      self.debugLog("Processing URL", extra: ["url": url.absoluteString])
       if let cid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(
         where: { $0.name == "cid" })?.value
       {
+        self.debugLog("Found cid parameter", extra: ["cid": cid])
         self.resolveCid(cid)
       } else if url.scheme?.hasPrefix("http") == true {
+        self.debugLog("Resolving universal link", extra: ["url": url.absoluteString])
         self.resolveUniversalLink(url)
       }
     }
@@ -327,28 +360,28 @@ public final class LinkMe: @unchecked Sendable {
         req.setValue(s, forHTTPHeaderField: "x-linkme-device")
       }
     }
-    print("[LinkMeKit] GET /api/deeplink?cid=\(cid)")
+    debugLog("GET /api/deeplink", extra: ["cid": cid])
     URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
       if let err = err {
-        print("[LinkMeKit] deeplink error=\(err.localizedDescription)")
+        self?.debugLog("Deeplink error", extra: ["error": err.localizedDescription])
         return
       }
       guard let http = resp as? HTTPURLResponse else {
-        print("[LinkMeKit] deeplink no response")
+        self?.debugLog("Deeplink missing response")
         return
       }
       if !(200..<300).contains(http.statusCode) {
         let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        print("[LinkMeKit] deeplink status=\(http.statusCode) body=\(body)")
+        self?.debugLog("Deeplink HTTP error", extra: ["status": http.statusCode, "body": body])
         return
       }
       guard let self = self, let data = data,
         let payload = try? JSONDecoder().decode(LinkPayload.self, from: data)
       else {
-        print("[LinkMeKit] deeplink decode failed")
+        self?.debugLog("Deeplink decode failed")
         return
       }
-      print("[LinkMeKit] deeplink payload=\(payload)")
+      self.debugLog("Deeplink payload received", extra: ["linkId": payload.linkId ?? "none"])
       self.emit(payload: payload)
     }.resume()
   }
@@ -363,30 +396,31 @@ public final class LinkMe: @unchecked Sendable {
     if let dev = buildDevicePayload(), cfg.sendDeviceInfo { body["device"] = dev }
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    print(
-      "[LinkMeKit] POST /api/deeplink/resolve-url base=\(cfg.baseUrl.absoluteString) url=\(urlIn.absoluteString)"
+    debugLog(
+      "POST /api/deeplink/resolve-url",
+      extra: ["baseUrl": cfg.baseUrl.absoluteString, "url": urlIn.absoluteString]
     )
     URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
       if let err = err {
-        print("[LinkMeKit] resolve-url error=\(err.localizedDescription)")
+        self?.debugLog("Resolve-url error", extra: ["error": err.localizedDescription])
         return
       }
       guard let http = resp as? HTTPURLResponse else {
-        print("[LinkMeKit] resolve-url no response")
+        self?.debugLog("Resolve-url missing response")
         return
       }
       if !(200..<300).contains(http.statusCode) {
         let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        print("[LinkMeKit] resolve-url status=\(http.statusCode) body=\(body)")
+        self?.debugLog("Resolve-url HTTP error", extra: ["status": http.statusCode, "body": body])
         return
       }
       guard let self = self, let data = data,
         let payload = try? JSONDecoder().decode(LinkPayload.self, from: data)
       else {
-        print("[LinkMeKit] resolve-url decode failed")
+        self?.debugLog("Resolve-url decode failed")
         return
       }
-      print("[LinkMeKit] resolve-url payload=\(payload)")
+      self.debugLog("Resolve-url payload received", extra: ["linkId": payload.linkId ?? "none"])
       self.emit(payload: payload)
     }.resume()
   }

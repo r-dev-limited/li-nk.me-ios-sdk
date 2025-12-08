@@ -17,7 +17,8 @@ pod 'LinkMeKit', '~> 0.2.0'
 ```swift
 LinkMe.shared.configure(config: .init(
   appId: "your_app_id",
-  appKey: "your_app_key"
+  appKey: "your_app_key",
+  debug: true
 ))
 ```
 

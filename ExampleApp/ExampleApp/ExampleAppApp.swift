@@ -47,7 +47,8 @@ struct ExampleAppApp: App {
             appKey: appKey,
             sendDeviceInfo: true,
             includeVendorId: true,
-            includeAdvertisingId: false
+            includeAdvertisingId: false,
+            debug: true
         ))
         
         _ = LinkMe.shared.addListener { payload in
