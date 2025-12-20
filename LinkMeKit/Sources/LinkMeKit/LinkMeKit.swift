@@ -293,12 +293,17 @@ public final class LinkMe: @unchecked Sendable {
     req.httpMethod = "POST"
     setHeaders(on: &req)
     var body: [String: Any] = [
-      "event": event,
+      "type": event,
       "platform": "ios",
       "timestamp": Int(Date().timeIntervalSince1970),
     ]
     if let userId { body["userId"] = userId }
-    if let props { body["props"] = props }
+    if let props,
+      let data = try? JSONSerialization.data(withJSONObject: props),
+      let detail = String(data: data, encoding: .utf8)
+    {
+      body["detail"] = detail
+    }
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     URLSession.shared.dataTask(with: req).resume()
