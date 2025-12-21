@@ -521,18 +521,57 @@ public final class LinkMe: @unchecked Sendable {
       resolveCid(cid)
     }
     
-    /// Reads a cid from pasteboard if it contains a valid li-nk.me URL
+    /// Reads a LinkMe cid from pasteboard.
+    ///
+    /// Accepts:
+    /// - `linkme:cid=<hex>`
+    /// - Any URL containing `?cid=<hex>` (host may be a branded domain / CNAME)
+    /// - Any clipboard text containing `cid=<hex>`
     private func readPasteboardCid() -> String? {
-      guard let str = UIPasteboard.general.string,
-        let url = URL(string: str),
-        // Only accept URLs from our domain (li-nk.me or subdomain)
-        let host = url.host?.lowercased(),
-        host.hasSuffix("li-nk.me") || host == "li-nk.me",
-        let cid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(
-          where: { $0.name == "cid" })?.value,
-        !cid.isEmpty
+      guard let raw = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !raw.isEmpty
       else { return nil }
-      return cid
+
+      func isValidCid(_ cid: String) -> Bool {
+        let re = try? NSRegularExpression(pattern: "^[a-fA-F0-9]{8,64}$")
+        let range = NSRange(location: 0, length: cid.utf16.count)
+        return re?.firstMatch(in: cid, options: [], range: range) != nil
+      }
+
+      if let m = raw.range(of: #"(^|\s)linkme:cid=([a-fA-F0-9]{8,64})(\s|$)"#, options: .regularExpression) {
+        let token = String(raw[m])
+        if let cidRange = token.range(of: #"[a-fA-F0-9]{8,64}"#, options: .regularExpression) {
+          let cid = String(token[cidRange])
+          return isValidCid(cid) ? cid : nil
+        }
+      }
+
+      let urlCandidate: String = {
+        if let m = raw.range(of: #"https?://\S+"#, options: .regularExpression) {
+          return String(raw[m])
+        }
+        return raw
+      }()
+
+      if let url = URL(string: urlCandidate),
+        let cid = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+          .queryItems?
+          .first(where: { $0.name == "cid" })?
+          .value,
+        isValidCid(cid)
+      {
+        return cid
+      }
+
+      if let m = raw.range(of: #"(?:^|[?&\s])cid=([a-fA-F0-9]{8,64})(?:$|[&\s])"#, options: .regularExpression) {
+        let chunk = String(raw[m])
+        if let cidRange = chunk.range(of: #"[a-fA-F0-9]{8,64}"#, options: .regularExpression) {
+          let cid = String(chunk[cidRange])
+          return isValidCid(cid) ? cid : nil
+        }
+      }
+
+      return nil
     }
   #endif
 }
