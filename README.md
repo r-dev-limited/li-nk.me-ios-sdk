@@ -9,7 +9,7 @@ iOS SDK for LinkMe — deep linking and attribution.
 ## Installation
 
 ```ruby
-pod 'LinkMeKit', '~> 0.2.5'
+pod 'LinkMeKit', '~> 0.2.7'
 ```
 
 ## Basic Usage

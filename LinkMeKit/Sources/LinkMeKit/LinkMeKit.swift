@@ -16,19 +16,25 @@ public struct LinkPayload: Codable, Sendable {
   public let params: [String: String]?
   public let utm: [String: String]?
   public let custom: [String: String]?
+  public let url: String?
+  public let isLinkMe: Bool?
 
   public init(
     linkId: String? = nil,
     path: String? = nil,
     params: [String: String]? = nil,
     utm: [String: String]? = nil,
-    custom: [String: String]? = nil
+    custom: [String: String]? = nil,
+    url: String? = nil,
+    isLinkMe: Bool? = nil
   ) {
     self.linkId = linkId
     self.path = path
     self.params = params
     self.utm = utm
     self.custom = custom
+    self.url = url
+    self.isLinkMe = isLinkMe
   }
 }
 
@@ -78,6 +84,18 @@ public final class LinkMe: @unchecked Sendable {
   private var advertisingConsentEnabled: Bool = false
   private var isReady: Bool = false
   private var debugEnabled: Bool { config?.debug ?? false }
+  private static let utmKeys: Set<String> = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "utm_id",
+    "utm_source_platform",
+    "utm_creative_format",
+    "utm_marketing_tactic",
+    "tags",
+  ]
 
   private func debugLog(_ message: String, extra: [String: Any?]? = nil) {
     guard debugEnabled else { return }
@@ -214,9 +232,10 @@ public final class LinkMe: @unchecked Sendable {
         completion(nil)
         return
       }
-      self.debugLog("Deferred claim payload received", extra: ["linkId": p.linkId ?? "none"])
-      self.emit(payload: p)
-      completion(p)
+      let payload = self.annotatePayload(p, isLinkMe: true)
+      self.debugLog("Deferred claim payload received", extra: ["linkId": payload.linkId ?? "none"])
+      self.emit(payload: payload)
+      completion(payload)
     }.resume()
   }
   
@@ -269,12 +288,13 @@ public final class LinkMe: @unchecked Sendable {
         completion(nil)
         return
       }
+      let annotated = self.annotatePayload(payload, isLinkMe: true)
       self.debugLog(
         "Pasteboard cid claim payload received",
-        extra: ["linkId": payload.linkId ?? "none"]
+        extra: ["linkId": annotated.linkId ?? "none"]
       )
-      self.emit(payload: payload)
-      completion(payload)
+      self.emit(payload: annotated)
+      completion(annotated)
     }.resume()
   }
 
@@ -386,8 +406,9 @@ public final class LinkMe: @unchecked Sendable {
         self?.debugLog("Deeplink decode failed")
         return
       }
-      self.debugLog("Deeplink payload received", extra: ["linkId": payload.linkId ?? "none"])
-      self.emit(payload: payload)
+      let annotated = self.annotatePayload(payload, isLinkMe: true)
+      self.debugLog("Deeplink payload received", extra: ["linkId": annotated.linkId ?? "none"])
+      self.emit(payload: annotated)
     }.resume()
   }
 
@@ -416,6 +437,11 @@ public final class LinkMe: @unchecked Sendable {
       }
       if !(200..<300).contains(http.statusCode) {
         let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        if self?.isDomainNotFound(body) == true, let fallback = self?.buildBasicUniversalPayload(url: urlIn) {
+          self?.debugLog("Resolve-url non-linkme", extra: ["url": urlIn.absoluteString])
+          self?.emit(payload: fallback)
+          return
+        }
         self?.debugLog("Resolve-url HTTP error", extra: ["status": http.statusCode, "body": body])
         return
       }
@@ -425,8 +451,9 @@ public final class LinkMe: @unchecked Sendable {
         self?.debugLog("Resolve-url decode failed")
         return
       }
-      self.debugLog("Resolve-url payload received", extra: ["linkId": payload.linkId ?? "none"])
-      self.emit(payload: payload)
+      let annotated = self.annotatePayload(payload, isLinkMe: true)
+      self.debugLog("Resolve-url payload received", extra: ["linkId": annotated.linkId ?? "none"])
+      self.emit(payload: annotated)
     }.resume()
   }
 
@@ -513,6 +540,51 @@ public final class LinkMe: @unchecked Sendable {
       self.lastPayload = payload
       for h in self.listeners { h(payload) }
     }
+  }
+
+  private func annotatePayload(_ payload: LinkPayload, isLinkMe: Bool? = nil, url: String? = nil) -> LinkPayload {
+    return LinkPayload(
+      linkId: payload.linkId,
+      path: payload.path,
+      params: payload.params,
+      utm: payload.utm,
+      custom: payload.custom,
+      url: payload.url ?? url,
+      isLinkMe: payload.isLinkMe ?? isLinkMe
+    )
+  }
+
+  private func buildBasicUniversalPayload(url: URL) -> LinkPayload? {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+    let (params, utm) = splitQueryItems(components.queryItems)
+    return LinkPayload(
+      path: url.path.isEmpty ? "/" : url.path,
+      params: params,
+      utm: utm,
+      url: url.absoluteString,
+      isLinkMe: false
+    )
+  }
+
+  private func splitQueryItems(_ items: [URLQueryItem]?) -> ([String: String]?, [String: String]?) {
+    guard let items, !items.isEmpty else { return (nil, nil) }
+    var params: [String: String] = [:]
+    var utm: [String: String] = [:]
+    for item in items {
+      guard let value = item.value else { continue }
+      if LinkMe.utmKeys.contains(item.name) {
+        utm[item.name] = value
+      } else {
+        params[item.name] = value
+      }
+    }
+    return (params.isEmpty ? nil : params, utm.isEmpty ? nil : utm)
+  }
+
+  private func isDomainNotFound(_ body: String) -> Bool {
+    guard let data = body.data(using: .utf8) else { return false }
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+    return (json["error"] as? String) == "domain_not_found"
   }
 
   #if canImport(UIKit)
