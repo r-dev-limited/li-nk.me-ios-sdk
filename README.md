@@ -28,9 +28,9 @@ LinkMe.shared.configure(config: .init(
 ))
 ```
 
-## Manual deep-link setup (equivalent to React Native plugin)
+## Manual deep-link setup mapping
 
-If you are comparing to React Native Expo plugin config:
+Use this config shape for your app setup values:
 
 ```json
 {
