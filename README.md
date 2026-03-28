@@ -22,7 +22,6 @@ pod 'LinkMeKit', '~> 0.2.9'
 
 ```swift
 LinkMe.shared.configure(config: .init(
-  baseUrl: URL(string: "https://li-nk.me")!,
   appId: "your_app_id",
   appKey: "your_app_key",
   debug: true
