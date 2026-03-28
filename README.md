@@ -28,6 +28,40 @@ LinkMe.shared.configure(config: .init(
 ))
 ```
 
+## Manual deep-link setup (equivalent to React Native plugin)
+
+If you are comparing to React Native Expo plugin config:
+
+```json
+{
+  "hosts": ["links.yourco.com"],
+  "associatedDomains": ["links.yourco.com"],
+  "schemes": ["yourapp"]
+}
+```
+
+configure iOS manually as:
+
+- `hosts` / `associatedDomains` -> Associated Domains capability:
+
+```text
+applinks:links.yourco.com
+```
+
+- `schemes` -> `Info.plist` URL types (`CFBundleURLSchemes`):
+
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>yourapp</string>
+    </array>
+  </dict>
+</array>
+```
+
 ## API
 
 | Method | Description |
