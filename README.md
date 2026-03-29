@@ -40,6 +40,16 @@ Use this config shape for your app setup values:
 }
 ```
 
+Required: this is not optional. Without Associated Domains + URL scheme setup, LinkMe deep links will not route into your iOS app.
+
+What each field does and why it must be set:
+
+- `hosts`: your HTTPS deep-link domain(s). iOS uses this domain for universal links.
+- `associatedDomains`: domain allowlist for iOS universal links. Must match your entitlements.
+- `schemes`: fallback custom URL scheme(s) for scheme-based opens.
+
+If these values are missing or mismatched, links open in Safari or fail to route into the app.
+
 configure iOS manually as:
 
 - `hosts` / `associatedDomains` -> Associated Domains capability:
