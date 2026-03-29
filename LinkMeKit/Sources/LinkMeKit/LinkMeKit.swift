@@ -18,6 +18,8 @@ public struct LinkPayload: Codable, Sendable {
   public let custom: [String: String]?
   public let url: String?
   public let isLinkMe: Bool?
+  public let forceRedirectWeb: Bool?
+  public let webFallbackUrl: String?
 
   public init(
     linkId: String? = nil,
@@ -26,7 +28,9 @@ public struct LinkPayload: Codable, Sendable {
     utm: [String: String]? = nil,
     custom: [String: String]? = nil,
     url: String? = nil,
-    isLinkMe: Bool? = nil
+    isLinkMe: Bool? = nil,
+    forceRedirectWeb: Bool? = nil,
+    webFallbackUrl: String? = nil
   ) {
     self.linkId = linkId
     self.path = path
@@ -35,6 +39,8 @@ public struct LinkPayload: Codable, Sendable {
     self.custom = custom
     self.url = url
     self.isLinkMe = isLinkMe
+    self.forceRedirectWeb = forceRedirectWeb
+    self.webFallbackUrl = webFallbackUrl
   }
 }
 
@@ -234,6 +240,10 @@ public final class LinkMe: @unchecked Sendable {
       }
       let payload = self.annotatePayload(p, isLinkMe: true)
       self.debugLog("Deferred claim payload received", extra: ["linkId": payload.linkId ?? "none"])
+      if self.handleForcedWebRedirect(payload) {
+        completion(payload)
+        return
+      }
       self.emit(payload: payload)
       completion(payload)
     }.resume()
@@ -293,6 +303,10 @@ public final class LinkMe: @unchecked Sendable {
         "Pasteboard cid claim payload received",
         extra: ["linkId": annotated.linkId ?? "none"]
       )
+      if self.handleForcedWebRedirect(annotated) {
+        completion(annotated)
+        return
+      }
       self.emit(payload: annotated)
       completion(annotated)
     }.resume()
@@ -408,6 +422,7 @@ public final class LinkMe: @unchecked Sendable {
       }
       let annotated = self.annotatePayload(payload, isLinkMe: true)
       self.debugLog("Deeplink payload received", extra: ["linkId": annotated.linkId ?? "none"])
+      if self.handleForcedWebRedirect(annotated) { return }
       self.emit(payload: annotated)
     }.resume()
   }
@@ -453,6 +468,7 @@ public final class LinkMe: @unchecked Sendable {
       }
       let annotated = self.annotatePayload(payload, isLinkMe: true)
       self.debugLog("Resolve-url payload received", extra: ["linkId": annotated.linkId ?? "none"])
+      if self.handleForcedWebRedirect(annotated) { return }
       self.emit(payload: annotated)
     }.resume()
   }
@@ -550,7 +566,9 @@ public final class LinkMe: @unchecked Sendable {
       utm: payload.utm,
       custom: payload.custom,
       url: payload.url ?? url,
-      isLinkMe: payload.isLinkMe ?? isLinkMe
+      isLinkMe: payload.isLinkMe ?? isLinkMe,
+      forceRedirectWeb: payload.forceRedirectWeb,
+      webFallbackUrl: payload.webFallbackUrl
     )
   }
 
@@ -562,8 +580,27 @@ public final class LinkMe: @unchecked Sendable {
       params: params,
       utm: utm,
       url: url.absoluteString,
-      isLinkMe: false
+      isLinkMe: false,
+      forceRedirectWeb: nil,
+      webFallbackUrl: nil
     )
+  }
+
+  private func handleForcedWebRedirect(_ payload: LinkPayload) -> Bool {
+    #if canImport(UIKit)
+      guard payload.forceRedirectWeb == true else { return false }
+      guard let raw = payload.webFallbackUrl, let target = URL(string: raw), !raw.isEmpty else {
+        debugLog("force_web.enabled_but_missing_url", extra: ["linkId": payload.linkId ?? "none"])
+        return false
+      }
+      DispatchQueue.main.async {
+        UIApplication.shared.open(target, options: [:], completionHandler: nil)
+      }
+      debugLog("force_web.browser_open", extra: ["linkId": payload.linkId ?? "none", "url": target.absoluteString])
+      return true
+    #else
+      return false
+    #endif
   }
 
   private func splitQueryItems(_ items: [URLQueryItem]?) -> ([String: String]?, [String: String]?) {
