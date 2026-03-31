@@ -15,7 +15,7 @@ https://github.com/r-dev-limited/li-nk.me-ios-sdk
 
 **CocoaPods:**
 ```ruby
-pod 'LinkMeKit', '~> 0.2.12'
+pod 'LinkMeKit', '~> 0.2.13'
 ```
 
 ## Basic Usage

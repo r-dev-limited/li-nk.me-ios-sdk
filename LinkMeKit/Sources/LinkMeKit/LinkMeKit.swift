@@ -303,6 +303,9 @@ public final class LinkMe: @unchecked Sendable {
         "Pasteboard cid claim payload received",
         extra: ["linkId": annotated.linkId ?? "none"]
       )
+      #if canImport(UIKit)
+        self.clearPasteboardCidIfPresent(cid)
+      #endif
       if self.handleForcedWebRedirect(annotated) {
         completion(annotated)
         return
@@ -634,8 +637,8 @@ public final class LinkMe: @unchecked Sendable {
     ///
     /// Accepts:
     /// - `linkme:cid=<hex>`
-    /// - Any URL containing `?cid=<hex>` (host may be a branded domain / CNAME)
-    /// - Any clipboard text containing `cid=<hex>`
+    /// - Any URL containing `?cid=<hex>` only when host is `li-nk.me`,
+    ///   a `*.li-nk.me` subdomain, or the configured `baseUrl` host.
     private func readPasteboardCid() -> String? {
       guard let raw = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
         !raw.isEmpty
@@ -669,18 +672,34 @@ public final class LinkMe: @unchecked Sendable {
           .value,
         isValidCid(cid)
       {
+        let host = (url.host ?? "").lowercased()
+        guard isLikelyLinkMeHost(host) else {
+          debugLog("Ignoring pasteboard cid from non-LinkMe host", extra: ["host": host])
+          return nil
+        }
         return cid
       }
 
-      if let m = raw.range(of: #"(?:^|[?&\s])cid=([a-fA-F0-9]{8,64})(?:$|[&\s])"#, options: .regularExpression) {
-        let chunk = String(raw[m])
-        if let cidRange = chunk.range(of: #"[a-fA-F0-9]{8,64}"#, options: .regularExpression) {
-          let cid = String(chunk[cidRange])
-          return isValidCid(cid) ? cid : nil
-        }
-      }
-
       return nil
+    }
+
+    private func isLikelyLinkMeHost(_ host: String) -> Bool {
+      guard !host.isEmpty else { return false }
+      if host == "li-nk.me" || host.hasSuffix(".li-nk.me") {
+        return true
+      }
+      if let configuredHost = config?.baseUrl.host?.lowercased(), !configuredHost.isEmpty {
+        return host == configuredHost
+      }
+      return false
+    }
+
+    private func clearPasteboardCidIfPresent(_ cid: String) {
+      let pasteboard = UIPasteboard.general
+      guard let current = pasteboard.string else { return }
+      guard current.contains(cid) else { return }
+      pasteboard.string = ""
+      debugLog("Cleared consumed pasteboard cid", extra: ["cid": cid])
     }
   #endif
 }
