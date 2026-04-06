@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LinkMe iOS SDK — Deep Linking for iOS Apps</title>
+  <meta name="description" content="Official iOS SDK for LinkMe. Add universal links, deferred deep linking, and attribution to your iOS app in minutes. Install via Swift Package Manager or CocoaPods.">
+  <meta name="keywords" content="iOS SDK, deep linking, universal links, deferred deep linking, attribution, LinkMe, Swift, SwiftUI, UIKit, mobile deep links, AASA">
+  <link rel="canonical" href="https://r-dev-limited.github.io/li-nk.me-ios-sdk/">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="LinkMe iOS SDK — Deep Linking for iOS Apps">
+  <meta property="og:description" content="Add universal links, deferred deep linking, and attribution to your iOS app in minutes.">
+  <meta property="og:url" content="https://r-dev-limited.github.io/li-nk.me-ios-sdk/">
+  <meta property="og:site_name" content="LinkMe">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="LinkMe iOS SDK — Deep Linking for iOS Apps">
+  <meta name="twitter:description" content="Add universal links, deferred deep linking, and attribution to your iOS app in minutes.">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "LinkMe iOS SDK",
+    "description": "Official iOS SDK for LinkMe — universal links, deferred deep linking, and attribution for iOS apps.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "iOS",
+    "url": "https://r-dev-limited.github.io/li-nk.me-ios-sdk/",
+    "downloadUrl": "https://cocoapods.org/pods/LinkMeKit",
+    "softwareVersion": "0.2.13",
+    "author": {
+      "@type": "Organization",
+      "name": "LinkMe",
+      "url": "https://li-nk.me"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "license": "https://opensource.org/licenses/Apache-2.0"
+  }
+  </script>
+
+  <style>
+    :root{--bg:#0a0a0a;--surface:#141414;--border:#262626;--text:#e5e5e5;--text-muted:#a3a3a3;--accent:#3b82f6;--accent-hover:#60a5fa;--code-bg:#1a1a2e;--code-text:#e2e8f0;--green:#22c55e}*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased}a{color:var(--accent);text-decoration:none;transition:color .2s}a:hover{color:var(--accent-hover)}.container{max-width:800px;margin:0 auto;padding:0 24px}header{border-bottom:1px solid var(--border);padding:16px 0}header .container{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}.logo{font-size:20px;font-weight:700;color:var(--text)}.logo span{color:var(--accent)}nav{display:flex;gap:20px;font-size:14px}.hero{padding:64px 0 48px;text-align:center}.badge{display:inline-block;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:13px;color:var(--green);margin-bottom:20px}h1{font-size:clamp(28px,5vw,42px);font-weight:800;line-height:1.2;margin-bottom:16px}.subtitle{font-size:18px;color:var(--text-muted);max-width:560px;margin:0 auto 32px}.cta-group{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:600;transition:all .2s}.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent-hover);color:#fff}.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}.btn-outline:hover{border-color:var(--accent);color:var(--accent)}section{padding:48px 0}h2{font-size:24px;font-weight:700;margin-bottom:20px}.step-number{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;font-weight:700;margin-right:10px}pre{background:var(--code-bg);border:1px solid var(--border);border-radius:10px;padding:20px 24px;overflow-x:auto;margin:16px 0;font-size:14px;line-height:1.6}code{font-family:'SF Mono','Fira Code','JetBrains Mono',monospace;color:var(--code-text)}:not(pre)>code{background:var(--surface);padding:2px 7px;border-radius:4px;font-size:13px}.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-top:24px}.feature{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px}.feature h3{font-size:16px;font-weight:600;margin-bottom:8px}.feature p{font-size:14px;color:var(--text-muted);line-height:1.5}.links-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:20px}.link-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 20px;font-size:14px;font-weight:500;transition:border-color .2s}.link-card:hover{border-color:var(--accent)}footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;font-size:14px;color:var(--text-muted)}footer a{color:var(--text-muted)}footer a:hover{color:var(--accent)}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <a href="https://li-nk.me" class="logo">Link<span>Me</span></a>
+    <nav>
+      <a href="https://help.li-nk.me/hc/link-me/en">Docs</a>
+      <a href="https://help.li-nk.me/hc/link-me/en/developer-setup/ios-setup-guide">Setup Guide</a>
+      <a href="https://github.com/r-dev-limited/li-nk.me-ios-sdk">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="container">
+      <div class="badge">v0.2.13 &middot; Apache-2.0</div>
+      <h1>LinkMe iOS SDK</h1>
+      <p class="subtitle">Universal links, deferred deep linking, and attribution for iOS apps. Route users to the right screen — even on first install.</p>
+      <div class="cta-group">
+        <a href="https://help.li-nk.me/hc/link-me/en/developer-setup/ios-setup-guide" class="btn btn-primary">Setup Guide</a>
+        <a href="https://cocoapods.org/pods/LinkMeKit" class="btn btn-outline">CocoaPods</a>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="container">
+      <h2><span class="step-number">1</span> Install</h2>
+      <p style="margin-bottom:8px"><strong>Swift Package Manager:</strong></p>
+      <pre><code>https://github.com/r-dev-limited/li-nk.me-ios-sdk</code></pre>
+      <p style="margin-bottom:8px"><strong>CocoaPods:</strong></p>
+      <pre><code>pod 'LinkMeKit', '~> 0.2.13'</code></pre>
+
+      <h2 style="margin-top:40px"><span class="step-number">2</span> Initialize</h2>
+      <pre><code>import LinkMeKit
+
+LinkMe.shared.configure(config: .init(
+    appId: "your_app_id",
+    appKey: "your_app_key",
+    sendDeviceInfo: true,
+    includeVendorId: true,
+    debug: true
+))</code></pre>
+
+      <h2 style="margin-top:40px"><span class="step-number">3</span> Handle Links</h2>
+      <pre><code>// Cold-start link
+LinkMe.shared.getInitialLink { initial in
+    if let initial {
+        routeUser(to: initial)
+    } else {
+        // Deferred deep link (first install)
+        LinkMe.shared.claimDeferredIfAvailable { deferred in
+            if let deferred { routeUser(to: deferred) }
+        }
+    }
+}
+
+// Live links while app is running
+let unsubscribe = LinkMe.shared.addListener { payload in
+    routeUser(to: payload)
+}</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Features</h2>
+      <div class="features">
+        <div class="feature">
+          <h3>Universal Links</h3>
+          <p>HTTPS deep links via Apple Universal Links. LinkMe hosts the AASA file automatically for your domains.</p>
+        </div>
+        <div class="feature">
+          <h3>Deferred Deep Linking</h3>
+          <p>Route users on first install via pasteboard tokens (deterministic) or fingerprint matching (fallback).</p>
+        </div>
+        <div class="feature">
+          <h3>Analytics</h3>
+          <p>Track app events and attribute installs to campaigns with <code>track()</code> and UTM parameters.</p>
+        </div>
+        <div class="feature">
+          <h3>SwiftUI &amp; UIKit</h3>
+          <p>Works with <code>onOpenURL</code>, <code>onContinueUserActivity</code>, and <code>AppDelegate</code> patterns.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Resources</h2>
+      <div class="links-grid">
+        <a href="https://help.li-nk.me/hc/link-me/en/developer-setup/ios-setup-guide" class="link-card">iOS Setup Guide</a>
+        <a href="https://help.li-nk.me/hc/link-me/en/sdks/ios-sdk-reference" class="link-card">SDK Reference</a>
+        <a href="https://help.li-nk.me/hc/link-me/en/guides/deferred-deep-linking-guide" class="link-card">Deferred Linking Guide</a>
+        <a href="https://help.li-nk.me/hc/link-me/en" class="link-card">Help Center</a>
+        <a href="https://li-nk.me" class="link-card">LinkMe Platform</a>
+        <a href="https://github.com/r-dev-limited/li-nk.me-ios-sdk" class="link-card">GitHub Repository</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="container">
+    <p>Powered by <a href="https://li-nk.me">LinkMe</a> &mdash; Universal Links as a Service</p>
+    <p style="margin-top:8px">
+      <a href="https://help.li-nk.me/hc/link-me/en">Documentation</a> &middot;
+      <a href="https://help.li-nk.me/hc/link-me/en/developer-reference/platform-architecture">Architecture</a> &middot;
+      <a href="https://github.com/r-dev-limited/li-nk.me-ios-sdk">Source</a>
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
