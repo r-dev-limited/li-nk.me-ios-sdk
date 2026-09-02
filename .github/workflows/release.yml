@@ -63,10 +63,7 @@ jobs:
             exit 1
           fi
 
-          SPEC_FILE="LinkMeKit/LinkMeKit.podspec"
-          if [[ ! -f "$SPEC_FILE" ]]; then
-            SPEC_FILE="LinkMeKit.podspec"
-          fi
+          SPEC_FILE="LinkMeKit.podspec"
 
           SPEC_VERSION=$(awk -F'"' '/^[[:space:]]*s\.version/ {print $2; exit}' "$SPEC_FILE")
 
@@ -81,27 +78,30 @@ jobs:
       - name: Build Swift Package (validate compilation)
         shell: bash
         run: |
-          pushd LinkMeKit
           swift build
-          popd
 
       - name: Swift tests
         shell: bash
         run: |
-          pushd LinkMeKit
           swift test
-          popd
+
+      - name: Build ExampleApp with Swift Package
+        shell: bash
+        run: |
+          xcodebuild \
+            -project ExampleApp/ExampleApp.xcodeproj \
+            -scheme ExampleApp \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build
 
       - name: Pod lib lint
         shell: bash
         run: |
-          pushd LinkMeKit
           pod lib lint LinkMeKit.podspec --allow-warnings
-          popd
 
       - name: Pod trunk push
         shell: bash
         run: |
-          pushd LinkMeKit
           pod trunk push LinkMeKit.podspec --allow-warnings
-          popd

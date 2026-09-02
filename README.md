@@ -20,16 +20,16 @@ Deep linking, deferred deep linking, and attribution for iOS apps.
 
 ### 2. Install
 
-**Swift Package Manager:**
+**Swift Package Manager (iOS 14+; macOS 10.15+):**
 
 1. In Xcode: **File > Add Packages...**
 2. Enter `https://github.com/r-dev-limited/li-nk.me-ios-sdk`
-3. Select the latest version tag and add `LinkMeKit` to your app target
+3. Select the latest version tag and add `LinkMeKit` to your app target. The package manifest is at the repository root.
 
 **CocoaPods:**
 
 ```ruby
-pod 'LinkMeKit', '~> 0.2.13'
+pod 'LinkMeKit', '~> 0.2.14'
 ```
 
 ### 3. Configure Universal Links
@@ -65,6 +65,7 @@ import LinkMeKit
 struct MyApp: App {
   init() {
     LinkMe.shared.configure(config: .init(
+      baseUrl: URL(string: "https://li-nk.me")!,
       appId: "your_app_id",
       appKey: "your_app_key",
       sendDeviceInfo: true,

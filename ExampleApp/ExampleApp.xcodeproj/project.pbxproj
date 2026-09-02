@@ -19,6 +19,7 @@
 		A00000232000000100A00001 /* LinkInfoCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000242000000100A00001 /* LinkInfoCard.swift */; };
 		A00000252000000100A00001 /* ButtonStyleModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000262000000100A00001 /* ButtonStyleModifier.swift */; };
 		A00000272000000100A00001 /* PathChangeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000282000000100A00001 /* PathChangeModifier.swift */; };
+		A00000292000000100A00001 /* AnalyticsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000002A2000000100A00001 /* AnalyticsHelper.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +37,7 @@
 		A00000242000000100A00001 /* LinkInfoCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkInfoCard.swift; sourceTree = "<group>"; };
 		A00000262000000100A00001 /* ButtonStyleModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonStyleModifier.swift; sourceTree = "<group>"; };
 		A00000282000000100A00001 /* PathChangeModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PathChangeModifier.swift; sourceTree = "<group>"; };
+		A000002A2000000100A00001 /* AnalyticsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsHelper.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +66,7 @@
 				A00000242000000100A00001 /* LinkInfoCard.swift */,
 				A00000262000000100A00001 /* ButtonStyleModifier.swift */,
 				A00000282000000100A00001 /* PathChangeModifier.swift */,
+				A000002A2000000100A00001 /* AnalyticsHelper.swift */,
 				A00000072000000100A00001 /* Assets.xcassets */,
 				A000000A2000000100A00001 /* Info.plist */,
 			);
@@ -135,7 +138,7 @@
 			);
 			mainGroup = A00000132000000100A00001;
 			packageReferences = (
-				A000000D2000000100A00001 /* XCLocalSwiftPackageReference "../LinkMeKit" */,
+				A000000D2000000100A00001 /* XCLocalSwiftPackageReference ".." */,
 			);
 			productRefGroup = A00000122000000100A00001 /* Products */;
 			projectDirPath = "";
@@ -172,6 +175,7 @@
 				A00000232000000100A00001 /* LinkInfoCard.swift in Sources */,
 				A00000252000000100A00001 /* ButtonStyleModifier.swift in Sources */,
 				A00000272000000100A00001 /* PathChangeModifier.swift in Sources */,
+				A00000292000000100A00001 /* AnalyticsHelper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -364,9 +368,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		A000000D2000000100A00001 /* XCLocalSwiftPackageReference "../LinkMeKit" */ = {
+		A000000D2000000100A00001 /* XCLocalSwiftPackageReference ".." */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../LinkMeKit;
+			relativePath = ..;
 		};
 /* End XCLocalSwiftPackageReference section */
 

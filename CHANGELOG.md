@@ -2,6 +2,12 @@
 
 All notable changes to the LinkMe iOS SDK.
 
+## 0.2.14
+
+- Publishes `Package.swift` at the repository root so Swift Package Manager can resolve the SDK directly from the Git URL.
+- Keeps the SDK source and tests in standard SwiftPM `Sources/` and `Tests/` directories.
+- Declares macOS 10.15 support for Flutter's macOS SwiftPM integration.
+
 ## 0.2.13
 
 - Tightens pasteboard deferred claim parsing to LinkMe hosts/token format only.

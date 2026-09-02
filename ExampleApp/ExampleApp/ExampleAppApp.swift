@@ -64,7 +64,6 @@ struct ExampleAppApp: App {
                 // This helper demonstrates how to map to Firebase and PostHog
                 AnalyticsHelper.logToAnalytics(payload: payload)
             }
-            }
         }
         
         if #available(iOS 14, *) {
