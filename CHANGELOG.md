@@ -2,6 +2,12 @@
 
 All notable changes to the LinkMe iOS SDK.
 
+## 0.2.15
+
+- Makes listener removal token-based and idempotent, gates device collection, and suppresses forced-web claim delivery after opening the browser.
+- Supports `setUserId(nil)` to clear event identity and adds listener/configuration regression tests.
+- Preserves `cid`/`duplicate` attribution fields while retaining the existing positional payload initializer order.
+
 ## 0.2.14
 
 - Publishes `Package.swift` at the repository root so Swift Package Manager can resolve the SDK directly from the Git URL.

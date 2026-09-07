@@ -24,17 +24,17 @@ Deep linking, deferred deep linking, and attribution for iOS apps.
 
 1. In Xcode: **File > Add Packages...**
 2. Enter `https://github.com/r-dev-limited/li-nk.me-ios-sdk`
-3. Select `v0.2.14` or a later version tag and add `LinkMeKit` to your app target. The package manifest is at the repository root.
+3. Select `v0.2.15` or a later version tag and add `LinkMeKit` to your app target. The package manifest is at the repository root.
 
 **CocoaPods (legacy):**
 
-The `v0.2.14` source release is available directly from Git while its CocoaPods trunk spec is being published:
+The `v0.2.15` source release is available directly from Git while its CocoaPods trunk spec is being published:
 
 ```ruby
-pod 'LinkMeKit', :git => 'https://github.com/r-dev-limited/li-nk.me-ios-sdk.git', :tag => 'v0.2.14'
+pod 'LinkMeKit', :git => 'https://github.com/r-dev-limited/li-nk.me-ios-sdk.git', :tag => 'v0.2.15'
 ```
 
-If your project must use the CocoaPods registry, remain on `LinkMeKit` `0.2.13` until the `0.2.14` spec appears on trunk.
+If your project must use the CocoaPods registry, remain on `LinkMeKit` `0.2.13` until the `0.2.15` spec appears on trunk.
 
 ### 3. Configure Universal Links
 
@@ -143,7 +143,7 @@ Both are handled automatically by `claimDeferredIfAvailable()`.
 | `addListener(_:)` | Subscribe to link events (returns unsubscribe closure) |
 | `claimDeferredIfAvailable(completion:)` | Claim deferred deep link on first install |
 | `track(event:properties:)` | Send analytics events |
-| `setUserId(_:)` | Associate a user ID |
+| `setUserId(_:)` | Associate a user ID; pass `nil` to clear it |
 | `setAdvertisingConsent(_:)` | Toggle advertising identifier usage |
 | `setReady()` | Signal readiness to process queued URLs |
 

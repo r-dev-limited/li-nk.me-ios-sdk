@@ -1,0 +1,15 @@
+name: LinkMeKit CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+      - name: Swift concurrency validation
+        run: swift build -Xswiftc -strict-concurrency=complete

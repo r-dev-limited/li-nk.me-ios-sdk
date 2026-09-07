@@ -30,9 +30,11 @@ jobs:
 
       - name: Verify tag exists
         if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
         shell: bash
         run: |
-          TAG="${{ github.event.inputs.tag }}"
+          TAG="$RELEASE_TAG"
           if ! git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag '$TAG' not found. Fetching all tags..."
             git fetch --tags
@@ -47,9 +49,11 @@ jobs:
 
       - name: Validate tag matches LinkMeKit.podspec
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
         run: |
-          if [[ -n "${{ github.event.inputs.tag }}" ]]; then
-            TAG="${{ github.event.inputs.tag }}"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            TAG="$RELEASE_TAG"
           else
             TAG="${GITHUB_REF_NAME}"
           fi
@@ -79,6 +83,11 @@ jobs:
         shell: bash
         run: |
           swift build
+
+      - name: Validate Swift concurrency
+        shell: bash
+        run: |
+          swift build -Xswiftc -strict-concurrency=complete
 
       - name: Swift tests
         shell: bash

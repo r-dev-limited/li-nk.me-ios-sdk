@@ -21,7 +21,10 @@ let package = Package(
         .testTarget(
             name: "LinkMeKitTests",
             dependencies: ["LinkMeKit"],
-            path: "Tests/LinkMeKitTests"
+            path: "Tests/LinkMeKitTests",
+            resources: [
+                .copy("Fixtures")
+            ]
         )
     ]
 )
