@@ -54,7 +54,17 @@ public struct LinkPayload: Codable, Sendable {
 
 public final class LinkMe: @unchecked Sendable {
   public static let shared = LinkMe()
-  private init() {}
+
+  /// The transport is injectable inside the module so native tests can exercise
+  /// request and timeout behavior without relying on a live Edge service.
+  /// Public consumers continue to use the shared URLSession by default.
+  private let urlSession: URLSession
+  private let requestTimeout: TimeInterval
+
+  internal init(urlSession: URLSession = .shared, requestTimeout: TimeInterval = 15) {
+    self.urlSession = urlSession
+    self.requestTimeout = requestTimeout
+  }
 
   public struct Config: Sendable {
     public let baseUrl: URL
@@ -223,6 +233,7 @@ public final class LinkMe: @unchecked Sendable {
     }
     let url = cfg.baseUrl.appendingPathComponent("api/deferred/claim")
     var req = URLRequest(url: url)
+    req.timeoutInterval = requestTimeout
     req.httpMethod = "POST"
     setHeaders(on: &req)
     var payload: [String: Any] = [
@@ -233,7 +244,7 @@ public final class LinkMe: @unchecked Sendable {
     req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     debugLog("POST /api/deferred/claim", extra: ["payload": payload])
-    URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+    urlSession.dataTask(with: req) { [weak self] data, resp, err in
       if let err = err {
         self?.debugLog("Deferred claim error", extra: ["error": err.localizedDescription])
         completion(nil)
@@ -284,6 +295,7 @@ public final class LinkMe: @unchecked Sendable {
       return
     }
     var req = URLRequest(url: url)
+    req.timeoutInterval = requestTimeout
     setHeaders(on: &req)
     if cfg.sendDeviceInfo, let dev = buildDevicePayload() {
       if let json = try? JSONSerialization.data(withJSONObject: dev),
@@ -293,7 +305,7 @@ public final class LinkMe: @unchecked Sendable {
       }
     }
     debugLog("GET /api/deeplink for cid", extra: ["cid": cid, "source": "pasteboard"])
-    URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+    urlSession.dataTask(with: req) { [weak self] data, resp, err in
       if let err = err {
         self?.debugLog("Pasteboard cid claim error", extra: ["error": err.localizedDescription])
         completion(nil)
@@ -350,6 +362,7 @@ public final class LinkMe: @unchecked Sendable {
     guard let cfg = config else { return }
     let url = cfg.baseUrl.appendingPathComponent("api/app-events")
     var req = URLRequest(url: url)
+    req.timeoutInterval = requestTimeout
     req.httpMethod = "POST"
     setHeaders(on: &req)
     var body: [String: Any] = [
@@ -368,7 +381,7 @@ public final class LinkMe: @unchecked Sendable {
     }
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    URLSession.shared.dataTask(with: req).resume()
+    urlSession.dataTask(with: req).resume()
   }
 
   // MARK: - Internal
@@ -419,6 +432,7 @@ public final class LinkMe: @unchecked Sendable {
     comp.queryItems = [URLQueryItem(name: "cid", value: cid)]
     guard let url = comp.url else { return }
     var req = URLRequest(url: url)
+    req.timeoutInterval = requestTimeout
     setHeaders(on: &req)
     if cfg.sendDeviceInfo, let dev = buildDevicePayload() {
       if let json = try? JSONSerialization.data(withJSONObject: dev),
@@ -428,7 +442,7 @@ public final class LinkMe: @unchecked Sendable {
       }
     }
     debugLog("GET /api/deeplink", extra: ["cid": cid])
-    URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+    urlSession.dataTask(with: req) { [weak self] data, resp, err in
       if let err = err {
         self?.debugLog("Deeplink error", extra: ["error": err.localizedDescription])
         return
@@ -459,6 +473,7 @@ public final class LinkMe: @unchecked Sendable {
     guard let cfg = config else { return }
     let url = cfg.baseUrl.appendingPathComponent("api/deeplink/resolve-url")
     var req = URLRequest(url: url)
+    req.timeoutInterval = requestTimeout
     req.httpMethod = "POST"
     setHeaders(on: &req)
     var body: [String: Any] = ["url": urlIn.absoluteString]
@@ -469,7 +484,7 @@ public final class LinkMe: @unchecked Sendable {
       "POST /api/deeplink/resolve-url",
       extra: ["baseUrl": cfg.baseUrl.absoluteString, "url": urlIn.absoluteString]
     )
-    URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+    urlSession.dataTask(with: req) { [weak self] data, resp, err in
       if let err = err {
         self?.debugLog("Resolve-url error", extra: ["error": err.localizedDescription])
         return

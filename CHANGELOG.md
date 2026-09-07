@@ -2,6 +2,11 @@
 
 All notable changes to the LinkMe iOS SDK.
 
+## 0.2.16
+
+- Adds an explicit 15-second deadline to SDK requests so offline or stalled transports cannot wait indefinitely.
+- Adds URLProtocol-backed transport, HTTP failure, and timeout regression tests without changing the public API.
+
 ## 0.2.15
 
 - Makes listener removal token-based and idempotent, gates device collection, and suppresses forced-web claim delivery after opening the browser.
