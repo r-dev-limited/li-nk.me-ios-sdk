@@ -20,6 +20,10 @@ public struct LinkPayload: Codable, Sendable {
   public let isLinkMe: Bool?
   public let forceRedirectWeb: Bool?
   public let webFallbackUrl: String?
+  /// Deferred attribution identifier returned by the Edge API.
+  public let cid: String?
+  /// True when the deferred claim was already consumed.
+  public let duplicate: Bool?
 
   public init(
     linkId: String? = nil,
@@ -30,7 +34,9 @@ public struct LinkPayload: Codable, Sendable {
     url: String? = nil,
     isLinkMe: Bool? = nil,
     forceRedirectWeb: Bool? = nil,
-    webFallbackUrl: String? = nil
+    webFallbackUrl: String? = nil,
+    cid: String? = nil,
+    duplicate: Bool? = nil
   ) {
     self.linkId = linkId
     self.path = path
@@ -41,6 +47,8 @@ public struct LinkPayload: Codable, Sendable {
     self.isLinkMe = isLinkMe
     self.forceRedirectWeb = forceRedirectWeb
     self.webFallbackUrl = webFallbackUrl
+    self.cid = cid
+    self.duplicate = duplicate
   }
 }
 
@@ -84,12 +92,19 @@ public final class LinkMe: @unchecked Sendable {
   private var config: Config?
   private var userId: String?
   private var lastPayload: LinkPayload?
-  private var listeners: [(LinkPayload) -> Void] = []
+  private var listeners: [UUID: (LinkPayload) -> Void] = [:]
   private var pendingURLs: [URL] = []
   private let queue = DispatchQueue(label: "me.link.linkmekit")
   private var advertisingConsentEnabled: Bool = false
   private var isReady: Bool = false
   private var debugEnabled: Bool { config?.debug ?? false }
+  private var platformName: String {
+    #if os(macOS)
+      return "macos"
+    #else
+      return "ios"
+    #endif
+  }
   private static let utmKeys: Set<String> = [
     "utm_source",
     "utm_medium",
@@ -142,15 +157,19 @@ public final class LinkMe: @unchecked Sendable {
 
   @discardableResult
   public func addListener(_ handler: @escaping (LinkPayload) -> Void) -> () -> Void {
-    listeners.append(handler)
-    let idx = listeners.count - 1
-    return { [weak self] in self?.listeners.remove(at: idx) }
+    let token = UUID()
+    queue.sync { listeners[token] = handler }
+    return { [weak self] in
+      // Removing by token is idempotent and cannot invalidate another subscriber.
+      self?.queue.async { self?.listeners.removeValue(forKey: token) }
+    }
   }
 
   // For wiring test only: broadcast a fake payload
   public func _debugEmit(_ payload: LinkPayload) {
-    for h in listeners { h(payload) }
-    lastPayload = payload
+    let handlers = queue.sync { Array(listeners.values) }
+    for h in handlers { h(payload) }
+    queue.sync { lastPayload = payload }
   }
 
   // MARK: - Public link handlers
@@ -164,15 +183,18 @@ public final class LinkMe: @unchecked Sendable {
       handleIncoming(url: url)
       return true
     }
+  #endif
 
-    @discardableResult
-    public func handle(url: URL) -> Bool {
-      handleIncoming(url: url)
-      return true
-    }
+  /// Forward a URL opened by the host application. Available on every
+  /// supported platform; platform-specific app delegates decide how to
+  /// receive the URL.
+  @discardableResult
+  public func handle(url: URL) -> Bool {
+    handleIncoming(url: url)
+    return true
+  }
 
   // First release: no deprecated aliases.
-  #endif
 
   public func claimDeferredIfAvailable(completion: @escaping (LinkPayload?) -> Void) {
     guard config != nil else {
@@ -205,9 +227,9 @@ public final class LinkMe: @unchecked Sendable {
     setHeaders(on: &req)
     var payload: [String: Any] = [
       "bundleId": Bundle.main.bundleIdentifier ?? "",
-      "platform": "ios",
+      "platform": platformName,
     ]
-    if let dev = buildDevicePayload(), cfg.sendDeviceInfo { payload["device"] = dev }
+    if cfg.sendDeviceInfo, let dev = buildDevicePayload() { payload["device"] = dev }
     req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     debugLog("POST /api/deferred/claim", extra: ["payload": payload])
@@ -232,7 +254,7 @@ public final class LinkMe: @unchecked Sendable {
         return
       }
       guard let self = self, let data = data,
-        let p = try? JSONDecoder().decode(LinkPayload.self, from: data)
+        let p = self.decodePayload(data)
       else {
         self?.debugLog("Deferred claim decode failed")
         completion(nil)
@@ -241,7 +263,7 @@ public final class LinkMe: @unchecked Sendable {
       let payload = self.annotatePayload(p, isLinkMe: true)
       self.debugLog("Deferred claim payload received", extra: ["linkId": payload.linkId ?? "none"])
       if self.handleForcedWebRedirect(payload) {
-        completion(payload)
+        completion(nil)
         return
       }
       self.emit(payload: payload)
@@ -263,7 +285,7 @@ public final class LinkMe: @unchecked Sendable {
     }
     var req = URLRequest(url: url)
     setHeaders(on: &req)
-    if let dev = buildDevicePayload(), cfg.sendDeviceInfo {
+    if cfg.sendDeviceInfo, let dev = buildDevicePayload() {
       if let json = try? JSONSerialization.data(withJSONObject: dev),
         let s = String(data: json, encoding: .utf8)
       {
@@ -292,13 +314,13 @@ public final class LinkMe: @unchecked Sendable {
         return
       }
       guard let self = self, let data = data,
-        let payload = try? JSONDecoder().decode(LinkPayload.self, from: data)
+        let payload = self.decodePayload(data)
       else {
         self?.debugLog("Pasteboard cid claim decode failed")
         completion(nil)
         return
       }
-      let annotated = self.annotatePayload(payload, isLinkMe: true)
+      let annotated = self.annotatePayload(payload, isLinkMe: true, cid: cid)
       self.debugLog(
         "Pasteboard cid claim payload received",
         extra: ["linkId": annotated.linkId ?? "none"]
@@ -307,7 +329,7 @@ public final class LinkMe: @unchecked Sendable {
         self.clearPasteboardCidIfPresent(cid)
       #endif
       if self.handleForcedWebRedirect(annotated) {
-        completion(annotated)
+        completion(nil)
         return
       }
       self.emit(payload: annotated)
@@ -315,7 +337,8 @@ public final class LinkMe: @unchecked Sendable {
     }.resume()
   }
 
-  public func setUserId(_ id: String) { userId = id }
+  /// Associate events with a user. Pass `nil` to clear the current identity.
+  public func setUserId(_ id: String?) { userId = id }
 
   // Opt-in/out of advertising identifier usage at runtime, typically after ATT prompt.
   // Persist this in your app if you want it to survive restarts.
@@ -331,9 +354,11 @@ public final class LinkMe: @unchecked Sendable {
     setHeaders(on: &req)
     var body: [String: Any] = [
       "type": event,
-      "platform": "ios",
+      "platform": platformName,
       "timestamp": Int(Date().timeIntervalSince1970),
     ]
+    if let cid = lastPayload?.cid { body["cid"] = cid }
+    if let linkId = lastPayload?.linkId { body["linkId"] = linkId }
     if let userId { body["userId"] = userId }
     if let props,
       let data = try? JSONSerialization.data(withJSONObject: props),
@@ -395,7 +420,7 @@ public final class LinkMe: @unchecked Sendable {
     guard let url = comp.url else { return }
     var req = URLRequest(url: url)
     setHeaders(on: &req)
-    if let dev = buildDevicePayload(), cfg.sendDeviceInfo {
+    if cfg.sendDeviceInfo, let dev = buildDevicePayload() {
       if let json = try? JSONSerialization.data(withJSONObject: dev),
         let s = String(data: json, encoding: .utf8)
       {
@@ -418,12 +443,12 @@ public final class LinkMe: @unchecked Sendable {
         return
       }
       guard let self = self, let data = data,
-        let payload = try? JSONDecoder().decode(LinkPayload.self, from: data)
+        let payload = self.decodePayload(data)
       else {
         self?.debugLog("Deeplink decode failed")
         return
       }
-      let annotated = self.annotatePayload(payload, isLinkMe: true)
+      let annotated = self.annotatePayload(payload, isLinkMe: true, cid: cid)
       self.debugLog("Deeplink payload received", extra: ["linkId": annotated.linkId ?? "none"])
       if self.handleForcedWebRedirect(annotated) { return }
       self.emit(payload: annotated)
@@ -437,7 +462,7 @@ public final class LinkMe: @unchecked Sendable {
     req.httpMethod = "POST"
     setHeaders(on: &req)
     var body: [String: Any] = ["url": urlIn.absoluteString]
-    if let dev = buildDevicePayload(), cfg.sendDeviceInfo { body["device"] = dev }
+    if cfg.sendDeviceInfo, let dev = buildDevicePayload() { body["device"] = dev }
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     debugLog(
@@ -464,7 +489,7 @@ public final class LinkMe: @unchecked Sendable {
         return
       }
       guard let self = self, let data = data,
-        let payload = try? JSONDecoder().decode(LinkPayload.self, from: data)
+        let payload = self.decodePayload(data)
       else {
         self?.debugLog("Resolve-url decode failed")
         return
@@ -480,7 +505,7 @@ public final class LinkMe: @unchecked Sendable {
   private func buildDevicePayload() -> [String: Any]? {
     guard let cfg = config else { return nil }
     var dev: [String: Any] = [:]
-    dev["platform"] = "ios"
+    dev["platform"] = platformName
     dev["bundleId"] = Bundle.main.bundleIdentifier ?? ""
     if let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
       dev["appVersion"] = v
@@ -557,11 +582,11 @@ public final class LinkMe: @unchecked Sendable {
     queue.async { [weak self] in
       guard let self = self else { return }
       self.lastPayload = payload
-      for h in self.listeners { h(payload) }
+      for h in self.listeners.values { h(payload) }
     }
   }
 
-  private func annotatePayload(_ payload: LinkPayload, isLinkMe: Bool? = nil, url: String? = nil) -> LinkPayload {
+  private func annotatePayload(_ payload: LinkPayload, isLinkMe: Bool? = nil, url: String? = nil, cid: String? = nil) -> LinkPayload {
     return LinkPayload(
       linkId: payload.linkId,
       path: payload.path,
@@ -571,8 +596,18 @@ public final class LinkMe: @unchecked Sendable {
       url: payload.url ?? url,
       isLinkMe: payload.isLinkMe ?? isLinkMe,
       forceRedirectWeb: payload.forceRedirectWeb,
-      webFallbackUrl: payload.webFallbackUrl
+      webFallbackUrl: payload.webFallbackUrl,
+      cid: payload.cid ?? cid,
+      duplicate: payload.duplicate
     )
+  }
+
+  private func decodePayload(_ data: Data) -> LinkPayload? {
+    guard let payload = try? JSONDecoder().decode(LinkPayload.self, from: data) else { return nil }
+    let hasField = payload.cid != nil || payload.linkId != nil || payload.path != nil || payload.params != nil ||
+      payload.utm != nil || payload.custom != nil || payload.url != nil ||
+      payload.isLinkMe != nil || payload.duplicate != nil || payload.forceRedirectWeb != nil || payload.webFallbackUrl != nil
+    return hasField ? payload : nil
   }
 
   private func buildBasicUniversalPayload(url: URL) -> LinkPayload? {

@@ -1,0 +1,22 @@
+{
+  "fixtureVersion": 1,
+  "linkId": "link-golden-001",
+  "cid": "cid-golden-001",
+  "path": "/welcome/春",
+  "params": {
+    "ref": "golden",
+    "quote": "He said \"go\""
+  },
+  "utm": {
+    "utm_source": "fixture",
+    "utm_campaign": "contract-v1"
+  },
+  "custom": {
+    "emoji": "🔗",
+    "control": "line\nfeed"
+  },
+  "url": "https://links.example.test/welcome/%E6%98%A5?ref=golden",
+  "isLinkMe": true,
+  "duplicate": false,
+  "forceRedirectWeb": false
+}
