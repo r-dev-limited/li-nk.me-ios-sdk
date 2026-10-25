@@ -1,0 +1,15 @@
+{
+  "fixtureVersion": 2,
+  "contractVersion": 1,
+  "claimPolicyVersion": 2,
+  "cid": "0123456789abcdef0123456789abcdef",
+  "linkId": "claim-policy-link",
+  "path": "/welcome/春",
+  "claimId": "e325270c-35a9-4380-a423-c338c4a1bd1f",
+  "claimMethod": "direct_cid",
+  "matchConfidence": "high",
+  "attributionStatus": "deterministic",
+  "duplicate": false,
+  "forceRedirectWeb": false,
+  "navigationAllowed": true
+}

@@ -2,6 +2,8 @@ import Foundation
 
 #if canImport(UIKit)
   import UIKit
+#elseif canImport(AppKit)
+  import AppKit
 #endif
 #if canImport(AppTrackingTransparency)
   import AppTrackingTransparency
@@ -22,8 +24,16 @@ public struct LinkPayload: Codable, Sendable {
   public let webFallbackUrl: String?
   /// Deferred attribution identifier returned by the Edge API.
   public let cid: String?
-  /// True when the deferred claim was already consumed.
+  /// Legacy duplicate classification; retries preserve the original claim outcome.
   public let duplicate: Bool?
+  public let claimId: String?
+  public let claimMethod: String?
+  public let matchConfidence: String?
+  public let attributionStatus: String?
+  public let contractVersion: Int?
+  public let claimPolicyVersion: Int?
+  public let navigationAllowed: Bool?
+
 
   public init(
     linkId: String? = nil,
@@ -36,7 +46,14 @@ public struct LinkPayload: Codable, Sendable {
     forceRedirectWeb: Bool? = nil,
     webFallbackUrl: String? = nil,
     cid: String? = nil,
-    duplicate: Bool? = nil
+    duplicate: Bool? = nil,
+    claimId: String? = nil,
+    claimMethod: String? = nil,
+    matchConfidence: String? = nil,
+    attributionStatus: String? = nil,
+    contractVersion: Int? = nil,
+    claimPolicyVersion: Int? = nil,
+    navigationAllowed: Bool? = nil
   ) {
     self.linkId = linkId
     self.path = path
@@ -49,21 +66,47 @@ public struct LinkPayload: Codable, Sendable {
     self.webFallbackUrl = webFallbackUrl
     self.cid = cid
     self.duplicate = duplicate
+    self.claimId = claimId
+    self.claimMethod = claimMethod
+    self.matchConfidence = matchConfidence
+    self.attributionStatus = attributionStatus
+    self.contractVersion = contractVersion
+    self.claimPolicyVersion = claimPolicyVersion
+    self.navigationAllowed = navigationAllowed
   }
 }
 
-public final class LinkMe: @unchecked Sendable {
+public final class LinkMe: NSObject, @unchecked Sendable {
   public static let shared = LinkMe()
 
   /// The transport is injectable inside the module so native tests can exercise
   /// request and timeout behavior without relying on a live Edge service.
   /// Public consumers continue to use the shared URLSession by default.
-  private let urlSession: URLSession
-  private let requestTimeout: TimeInterval
+  private let transport: RequestScope
+  private let defaultRequestTimeout: TimeInterval
+  private let openExternalURL: @MainActor (URL) -> Void
+  private let pasteboardTokenProvider: (() -> String?)?
 
-  internal init(urlSession: URLSession = .shared, requestTimeout: TimeInterval = 15) {
-    self.urlSession = urlSession
-    self.requestTimeout = requestTimeout
+  internal init(
+    urlSession: URLSession = .shared,
+    requestTimeout: TimeInterval = 15,
+    makeTask: RequestTaskFactory? = nil,
+    openExternalURL: (@MainActor (URL) -> Void)? = nil,
+    deliveryQueue: DispatchQueue = DispatchQueue(label: "me.link.linkmekit"),
+    pasteboardTokenProvider: (() -> String?)? = nil
+  ) {
+    self.transport = RequestScope(urlSession: urlSession, makeTask: makeTask)
+    self.queue = deliveryQueue
+    self.pasteboardTokenProvider = pasteboardTokenProvider
+    self.defaultRequestTimeout = requestTimeout
+    self.openExternalURL = openExternalURL ?? { target in
+      #if canImport(UIKit)
+        UIApplication.shared.open(target, options: [:], completionHandler: nil)
+      #elseif canImport(AppKit)
+        NSWorkspace.shared.open(target)
+      #endif
+    }
+    super.init()
   }
 
   public struct Config: Sendable {
@@ -78,6 +121,8 @@ public final class LinkMe: @unchecked Sendable {
     public let includeVendorId: Bool
     public let includeAdvertisingId: Bool
     public let debug: Bool
+    /// Total HTTP deadline in seconds. Nil uses the 15-second default.
+    public let requestTimeout: TimeInterval?
     public init(
       baseUrl: URL,
       appId: String? = nil,
@@ -86,7 +131,8 @@ public final class LinkMe: @unchecked Sendable {
       sendDeviceInfo: Bool = true,
       includeVendorId: Bool = true,
       includeAdvertisingId: Bool = false,
-      debug: Bool = false
+      debug: Bool = false,
+      requestTimeout: TimeInterval? = nil
     ) {
       self.baseUrl = baseUrl
       self.appId = appId
@@ -96,6 +142,12 @@ public final class LinkMe: @unchecked Sendable {
       self.includeVendorId = includeVendorId
       self.includeAdvertisingId = includeAdvertisingId
       self.debug = debug
+      // Keep the existing nonthrowing configuration initializer compatible.
+      if let requestTimeout {
+        self.requestTimeout = requestTimeout.isFinite && requestTimeout > 0 && requestTimeout <= 2_147_483.647 ? requestTimeout : 15
+      } else {
+        self.requestTimeout = nil
+      }
     }
   }
 
@@ -103,8 +155,17 @@ public final class LinkMe: @unchecked Sendable {
   private var userId: String?
   private var lastPayload: LinkPayload?
   private var listeners: [UUID: (LinkPayload) -> Void] = [:]
+  private var listenerOrder: [UUID] = []
+  private let stateLock = NSRecursiveLock()
+  private var generation: UInt64 = 0
+  private var lifecycleOwner: String?
+  private var lifecycleClientGeneration = 0
+  private var lifecycleKnownGenerations: [String: Int] = [:]
+  private var lifecycleOwnerOrder: [String] = []
+  private var lifecycleLastCommand: (owner: String, generation: Int, signature: Data)?
+  private var lifecycleSubscriptions: [String: () -> Void] = [:]
   private var pendingURLs: [URL] = []
-  private let queue = DispatchQueue(label: "me.link.linkmekit")
+  private let queue: DispatchQueue
   private var advertisingConsentEnabled: Bool = false
   private var isReady: Bool = false
   private var debugEnabled: Bool { config?.debug ?? false }
@@ -137,49 +198,102 @@ public final class LinkMe: @unchecked Sendable {
     }
   }
 
-  public func configure(config: Config) {
-    self.config = config
-    debugLog(
-      "Configured",
-      extra: [
-        "baseUrl": config.baseUrl.absoluteString,
-        "appId": config.appId ?? "none",
-        "debug": config.debug
-      ]
-    )
-    // Initialize advertising consent from config flag; can be overridden later
-    self.advertisingConsentEnabled = config.includeAdvertisingId
-    // Configure now acts as "setReady": set config and begin processing queued links
-    self.isReady = true
-    queue.async { [weak self] in
-      self?.drainPending()
-      #if canImport(UIKit)
-        if config.enablePasteboard { self?.tryReadPasteboardToken() }
-      #endif
+  /// Mutable SDK state is protected by a recursive lock. Delivery runs on the
+  /// SDK serial queue; handlers may synchronously reconfigure/remove listeners.
+  private func withState<T>(_ operation: () -> T) -> T {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return operation()
+  }
+
+  private func isCurrent(_ expected: UInt64) -> Bool {
+    generation == expected && config != nil && isReady
+  }
+
+  private func invalidateCurrentWork() {
+    generation &+= 1
+    transport.cancelAll()
+  }
+
+  public func cancelPendingRequests() {
+    withState { invalidateCurrentWork(); resetLifecycleOwner() }
+  }
+
+  public func dispose() {
+    withState {
+      invalidateCurrentWork()
+      config = nil
+      isReady = false
+      lastPayload = nil
+      userId = nil
+      advertisingConsentEnabled = false
+      pendingURLs.removeAll()
+      listeners.removeAll()
+      listenerOrder.removeAll()
+      lifecycleSubscriptions.removeAll()
+      resetLifecycleOwner()
     }
   }
 
-  // First release: no deprecated aliases.
+  public func configure(config: Config) {
+    withState {
+      let hadConfiguration = self.config != nil
+      invalidateCurrentWork()
+      resetLifecycleOwner()
+      if hadConfiguration { pendingURLs.removeAll() }
+      self.config = config
+      self.lastPayload = nil
+      self.userId = nil
+      self.advertisingConsentEnabled = config.includeAdvertisingId
+      self.isReady = true
+      let expected = generation
+      queue.async { [weak self] in
+        guard let self else { return }
+        self.withState {
+          guard self.isCurrent(expected) else { return }
+          self.drainPending()
+          #if canImport(UIKit)
+            if config.enablePasteboard { self.tryReadPasteboardToken() }
+          #endif
+        }
+      }
+    }
+  }
 
   public func getInitialLink(completion: @escaping (LinkPayload?) -> Void) {
-    queue.async { [weak self] in completion(self?.lastPayload) }
+    let callback = CallbackBox(completion)
+    withState {
+      let expected = generation
+      queue.async { [weak self] in
+        guard let self else { callback.call(nil); return }
+        self.withState { callback.call(self.isCurrent(expected) ? self.lastPayload : nil) }
+      }
+    }
   }
 
   @discardableResult
   public func addListener(_ handler: @escaping (LinkPayload) -> Void) -> () -> Void {
     let token = UUID()
-    queue.sync { listeners[token] = handler }
+    withState {
+      listeners[token] = handler
+      listenerOrder.append(token)
+    }
     return { [weak self] in
-      // Removing by token is idempotent and cannot invalidate another subscriber.
-      self?.queue.async { self?.listeners.removeValue(forKey: token) }
+      self?.withState {
+        self?.listeners.removeValue(forKey: token)
+        self?.listenerOrder.removeAll { $0 == token }
+      }
     }
   }
 
-  // For wiring test only: broadcast a fake payload
+  // For wiring tests only; uses the same guarded delivery as network payloads.
   public func _debugEmit(_ payload: LinkPayload) {
-    let handlers = queue.sync { Array(listeners.values) }
-    for h in handlers { h(payload) }
-    queue.sync { lastPayload = payload }
+    withState {
+      let expected = generation
+      queue.async { [weak self] in
+        self?.withState { self?.emit(payload: payload, generation: expected) }
+      }
+    }
   }
 
   // MARK: - Public link handlers
@@ -207,205 +321,195 @@ public final class LinkMe: @unchecked Sendable {
   // First release: no deprecated aliases.
 
   public func claimDeferredIfAvailable(completion: @escaping (LinkPayload?) -> Void) {
-    guard config != nil else {
-      completion(nil)
-      return
-    }
-    
-    // First, try to read cid from pasteboard (set by li-nk.me during App Store redirect)
-    #if canImport(UIKit)
-    if let cid = readPasteboardCid() {
-      debugLog("Found cid in pasteboard, using direct claim")
-      resolveCidWithCompletion(cid, completion: completion)
-      return
-    }
-    #endif
-    
-    // Fallback to fingerprint-based claim
-    debugLog("No pasteboard cid, using fingerprint claim")
-    claimViaFingerprint(completion: completion)
-  }
-  
-  private func claimViaFingerprint(completion: @escaping (LinkPayload?) -> Void) {
-    guard let cfg = config else {
-      completion(nil)
-      return
-    }
-    let url = cfg.baseUrl.appendingPathComponent("api/deferred/claim")
-    var req = URLRequest(url: url)
-    req.timeoutInterval = requestTimeout
-    req.httpMethod = "POST"
-    setHeaders(on: &req)
-    var payload: [String: Any] = [
-      "bundleId": Bundle.main.bundleIdentifier ?? "",
-      "platform": platformName,
-    ]
-    if cfg.sendDeviceInfo, let dev = buildDevicePayload() { payload["device"] = dev }
-    req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    debugLog("POST /api/deferred/claim", extra: ["payload": payload])
-    urlSession.dataTask(with: req) { [weak self] data, resp, err in
-      if let err = err {
-        self?.debugLog("Deferred claim error", extra: ["error": err.localizedDescription])
-        completion(nil)
-        return
-      }
-      guard let http = resp as? HTTPURLResponse else {
-        self?.debugLog("Deferred claim missing HTTP response")
-        completion(nil)
-        return
-      }
-      if !(200..<300).contains(http.statusCode) {
-        let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        self?.debugLog(
-          "Deferred claim HTTP error",
-          extra: ["status": http.statusCode, "body": body]
-        )
-        completion(nil)
-        return
-      }
-      guard let self = self, let data = data,
-        let p = self.decodePayload(data)
-      else {
-        self?.debugLog("Deferred claim decode failed")
-        completion(nil)
-        return
-      }
-      let payload = self.annotatePayload(p, isLinkMe: true)
-      self.debugLog("Deferred claim payload received", extra: ["linkId": payload.linkId ?? "none"])
-      if self.handleForcedWebRedirect(payload) {
-        completion(nil)
-        return
-      }
-      self.emit(payload: payload)
-      completion(payload)
-    }.resume()
-  }
-  
-  private func resolveCidWithCompletion(_ cid: String, completion: @escaping (LinkPayload?) -> Void) {
-    guard let cfg = config else {
-      completion(nil)
-      return
-    }
-    var comp = URLComponents(
-      url: cfg.baseUrl.appendingPathComponent("api/deeplink"), resolvingAgainstBaseURL: false)!
-    comp.queryItems = [URLQueryItem(name: "cid", value: cid)]
-    guard let url = comp.url else {
-      completion(nil)
-      return
-    }
-    var req = URLRequest(url: url)
-    req.timeoutInterval = requestTimeout
-    setHeaders(on: &req)
-    if cfg.sendDeviceInfo, let dev = buildDevicePayload() {
-      if let json = try? JSONSerialization.data(withJSONObject: dev),
-        let s = String(data: json, encoding: .utf8)
-      {
-        req.setValue(s, forHTTPHeaderField: "x-linkme-device")
-      }
-    }
-    debugLog("GET /api/deeplink for cid", extra: ["cid": cid, "source": "pasteboard"])
-    urlSession.dataTask(with: req) { [weak self] data, resp, err in
-      if let err = err {
-        self?.debugLog("Pasteboard cid claim error", extra: ["error": err.localizedDescription])
-        completion(nil)
-        return
-      }
-      guard let http = resp as? HTTPURLResponse else {
-        self?.debugLog("Pasteboard cid claim missing response")
-        completion(nil)
-        return
-      }
-      if !(200..<300).contains(http.statusCode) {
-        let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        self?.debugLog(
-          "Pasteboard cid HTTP error",
-          extra: ["status": http.statusCode, "body": body]
-        )
-        completion(nil)
-        return
-      }
-      guard let self = self, let data = data,
-        let payload = self.decodePayload(data)
-      else {
-        self?.debugLog("Pasteboard cid claim decode failed")
-        completion(nil)
-        return
-      }
-      let annotated = self.annotatePayload(payload, isLinkMe: true, cid: cid)
-      self.debugLog(
-        "Pasteboard cid claim payload received",
-        extra: ["linkId": annotated.linkId ?? "none"]
-      )
+    let callback = CallbackBox(completion)
+    withState {
+      let expected = generation
       #if canImport(UIKit)
-        self.clearPasteboardCidIfPresent(cid)
+        // UIKit clipboard access belongs on main, with a lifecycle check at
+        // the point of the read. No stale configuration may trigger the read.
+        DispatchQueue.main.async { [weak self] in
+          guard let self else { callback.call(nil); return }
+          self.withState {
+            guard self.isCurrent(expected) else { self.complete(callback, payload: nil); return }
+            let cid = self.pasteboardTokenProvider.map { $0() } ?? self.readPasteboardCid()
+            if let cid {
+              self.resolveCidWithCompletion(cid, clearPasteboard: true, completion: callback.call)
+            } else {
+              self.claimViaFingerprint(completion: callback.call)
+            }
+          }
+        }
+      #else
+        queue.async { [weak self] in
+          guard let self else { callback.call(nil); return }
+          self.withState {
+            guard self.isCurrent(expected) else { callback.call(nil); return }
+            self.claimViaFingerprint(completion: callback.call)
+          }
+        }
       #endif
-      if self.handleForcedWebRedirect(annotated) {
-        completion(nil)
-        return
-      }
-      self.emit(payload: annotated)
-      completion(annotated)
-    }.resume()
+    }
   }
 
-  /// Associate events with a user. Pass `nil` to clear the current identity.
-  public func setUserId(_ id: String?) { userId = id }
+  private func complete(_ callback: CallbackBox<LinkPayload?>, payload: LinkPayload?) {
+    queue.async { callback.call(payload) }
+  }
 
-  // Opt-in/out of advertising identifier usage at runtime, typically after ATT prompt.
-  // Persist this in your app if you want it to survive restarts.
+  private func perform(_ request: URLRequest, generation expected: UInt64,
+                       completion: @escaping (Data?, URLResponse?, Error?) -> Void) {
+    let callback = CallbackBox<(Data?, URLResponse?, Error?)> { result in
+      completion(result.0, result.1, result.2)
+    }
+    let deliveryQueue = queue
+    transport.start(request) { [weak self] data, response, error in
+      deliveryQueue.async { [weak self] in
+        guard let self else { callback.call((nil, nil, URLError(.cancelled))); return }
+        self.withState {
+          guard self.isCurrent(expected) else {
+            callback.call((nil, nil, URLError(.cancelled)))
+            return
+          }
+          callback.call((data, response, error))
+        }
+      }
+    }
+  }
+
+  private func requestPayload(_ request: URLRequest, cid: String? = nil,
+                              fallbackURL: URL? = nil, clearPasteboard: Bool = false,
+                              completion: @escaping (LinkPayload?) -> Void) {
+    let expected = generation
+    let callback = CallbackBox(completion)
+    perform(request, generation: expected) { [weak self] data, response, error in
+      guard let self, error == nil, let http = response as? HTTPURLResponse else {
+        callback.call(nil)
+        return
+      }
+      var payload: LinkPayload?
+      if (200..<300).contains(http.statusCode), let data {
+        payload = self.decodePayload(data).map { self.annotatePayload($0, isLinkMe: true, cid: cid) }
+      } else if let fallbackURL, let data, let body = String(data: data, encoding: .utf8), self.isDomainNotFound(body) {
+        payload = self.buildBasicUniversalPayload(url: fallbackURL)
+      }
+      guard let payload, self.isCurrent(expected) else { callback.call(nil); return }
+      #if canImport(UIKit)
+        if clearPasteboard, let cid, payload.navigationAllowed != false {
+          DispatchQueue.main.async { [weak self] in
+            self?.withState {
+              guard let self, self.isCurrent(expected) else { return }
+              self.clearPasteboardCidIfPresent(cid)
+            }
+          }
+        }
+      #endif
+      if self.handleForcedWebRedirect(payload, generation: expected) { callback.call(nil); return }
+      self.emit(payload: payload, generation: expected)
+      callback.call(self.isCurrent(expected) ? payload : nil)
+    }
+  }
+
+  private func claimViaFingerprint(completion: @escaping (LinkPayload?) -> Void) {
+    guard let cfg = config else { completion(nil); return }
+    var request = URLRequest(url: cfg.baseUrl.appendingPathComponent("api/deferred/claim"))
+    request.timeoutInterval = cfg.requestTimeout ?? defaultRequestTimeout
+    request.httpMethod = "POST"
+    setHeaders(on: &request)
+    var body: [String: Any] = ["bundleId": Bundle.main.bundleIdentifier ?? "", "platform": platformName]
+    if cfg.sendDeviceInfo, let device = buildDevicePayload() { body["device"] = device }
+    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    requestPayload(request, completion: completion)
+  }
+
+  private func resolveCidWithCompletion(_ cid: String, clearPasteboard: Bool = false,
+                                        completion: @escaping (LinkPayload?) -> Void) {
+    guard let cfg = config else { completion(nil); return }
+    var components = URLComponents(url: cfg.baseUrl.appendingPathComponent("api/deeplink"), resolvingAgainstBaseURL: false)!
+    components.queryItems = [URLQueryItem(name: "cid", value: cid)]
+    guard let url = components.url else { completion(nil); return }
+    var request = URLRequest(url: url)
+    request.timeoutInterval = cfg.requestTimeout ?? defaultRequestTimeout
+    setHeaders(on: &request)
+    if cfg.sendDeviceInfo, let device = buildDevicePayload(),
+       let data = try? JSONSerialization.data(withJSONObject: device), let json = String(data: data, encoding: .utf8) {
+      request.setValue(json, forHTTPHeaderField: "x-linkme-device")
+    }
+    requestPayload(request, cid: cid, clearPasteboard: clearPasteboard, completion: completion)
+  }
+
+  public func setUserId(_ id: String?) {
+    withState {
+      if userId != id { invalidateCurrentWork(); resetLifecycleOwner() }
+      userId = id
+    }
+  }
+
   public func setAdvertisingConsent(_ granted: Bool) {
-    queue.async { [weak self] in self?.advertisingConsentEnabled = granted }
+    withState {
+      if advertisingConsentEnabled != granted { invalidateCurrentWork(); resetLifecycleOwner() }
+      advertisingConsentEnabled = granted
+    }
   }
 
   public func track(event: String, props: [String: Any]? = nil) {
-    guard let cfg = config else { return }
-    let url = cfg.baseUrl.appendingPathComponent("api/app-events")
-    var req = URLRequest(url: url)
-    req.timeoutInterval = requestTimeout
-    req.httpMethod = "POST"
-    setHeaders(on: &req)
-    var body: [String: Any] = [
-      "type": event,
-      "platform": platformName,
-      "timestamp": Int(Date().timeIntervalSince1970),
-    ]
-    if let cid = lastPayload?.cid { body["cid"] = cid }
-    if let linkId = lastPayload?.linkId { body["linkId"] = linkId }
-    if let userId { body["userId"] = userId }
-    if let props,
-      let data = try? JSONSerialization.data(withJSONObject: props),
-      let detail = String(data: data, encoding: .utf8)
-    {
-      body["detail"] = detail
+    withState {
+      guard let cfg = config, isReady, !event.isEmpty else { return }
+      let expected = generation
+      var request = URLRequest(url: cfg.baseUrl.appendingPathComponent("api/app-events"))
+      request.timeoutInterval = cfg.requestTimeout ?? defaultRequestTimeout
+      request.httpMethod = "POST"
+      setHeaders(on: &request)
+      var body: [String: Any] = ["type": event, "platform": platformName, "timestamp": Int(Date().timeIntervalSince1970)]
+      if let cid = lastPayload?.cid { body["cid"] = cid }
+      if let linkId = lastPayload?.linkId { body["linkId"] = linkId }
+      if let userId { body["userId"] = userId }
+      if let props, let data = try? JSONSerialization.data(withJSONObject: props), let detail = String(data: data, encoding: .utf8) {
+        body["detail"] = detail
+      }
+      request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+      let preparedRequest = request
+      queue.async { [weak self] in
+        self?.withState {
+          guard let self, self.isCurrent(expected) else { return }
+          self.perform(preparedRequest, generation: expected) { _, _, _ in }
+        }
+      }
     }
-    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    urlSession.dataTask(with: req).resume()
   }
 
-  // MARK: - Internal
   private func handleIncoming(url: URL) {
-    queue.async { [weak self] in
-      guard let self = self else { return }
-      guard self.config != nil, self.isReady else {
-        self.debugLog(
-          "Queueing URL",
-          extra: ["url": url.absoluteString, "ready": self.isReady, "hasConfig": self.config != nil]
-        )
-        self.pendingURLs.append(url)
-        return
+    withState {
+      guard config != nil, isReady else { pendingURLs.append(url); return }
+      let expected = generation
+      queue.async { [weak self] in
+        self?.withState {
+          guard let self, self.isCurrent(expected) else { return }
+          self.processIncoming(url)
+        }
       }
-      self.debugLog("Processing URL", extra: ["url": url.absoluteString])
-      if let cid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(
-        where: { $0.name == "cid" })?.value
-      {
-        self.debugLog("Found cid parameter", extra: ["cid": cid])
-        self.resolveCid(cid)
-      } else if url.scheme?.hasPrefix("http") == true {
-        self.debugLog("Resolving universal link", extra: ["url": url.absoluteString])
-        self.resolveUniversalLink(url)
+    }
+  }
+
+  private func processIncoming(_ url: URL) {
+    #if canImport(UIKit)
+      let expected = generation
+      DispatchQueue.main.async { [weak self] in
+        self?.withState {
+          guard let self, self.isCurrent(expected) else { return }
+          self.resolveIncoming(url)
+        }
       }
+    #else
+      resolveIncoming(url)
+    #endif
+  }
+
+  private func resolveIncoming(_ url: URL) {
+    if let cid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "cid" })?.value {
+      resolveCid(cid)
+    } else if url.scheme == "http" || url.scheme == "https" {
+      resolveUniversalLink(url)
     }
   }
 
@@ -413,108 +517,34 @@ public final class LinkMe: @unchecked Sendable {
     guard config != nil, isReady else { return }
     let urls = pendingURLs
     pendingURLs.removeAll()
-    for u in urls { handleIncoming(url: u) }
+    for url in urls { processIncoming(url) }
   }
 
-  // Call when user consent state is finalized and you want to start network calls.
   public func setReady() {
-    queue.async { [weak self] in
-      guard let self = self else { return }
-      self.isReady = true
-      self.drainPending()
+    withState {
+      isReady = true
+      drainPending()
     }
   }
 
   private func resolveCid(_ cid: String) {
-    guard let cfg = config else { return }
-    var comp = URLComponents(
-      url: cfg.baseUrl.appendingPathComponent("api/deeplink"), resolvingAgainstBaseURL: false)!
-    comp.queryItems = [URLQueryItem(name: "cid", value: cid)]
-    guard let url = comp.url else { return }
-    var req = URLRequest(url: url)
-    req.timeoutInterval = requestTimeout
-    setHeaders(on: &req)
-    if cfg.sendDeviceInfo, let dev = buildDevicePayload() {
-      if let json = try? JSONSerialization.data(withJSONObject: dev),
-        let s = String(data: json, encoding: .utf8)
-      {
-        req.setValue(s, forHTTPHeaderField: "x-linkme-device")
-      }
-    }
-    debugLog("GET /api/deeplink", extra: ["cid": cid])
-    urlSession.dataTask(with: req) { [weak self] data, resp, err in
-      if let err = err {
-        self?.debugLog("Deeplink error", extra: ["error": err.localizedDescription])
-        return
-      }
-      guard let http = resp as? HTTPURLResponse else {
-        self?.debugLog("Deeplink missing response")
-        return
-      }
-      if !(200..<300).contains(http.statusCode) {
-        let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        self?.debugLog("Deeplink HTTP error", extra: ["status": http.statusCode, "body": body])
-        return
-      }
-      guard let self = self, let data = data,
-        let payload = self.decodePayload(data)
-      else {
-        self?.debugLog("Deeplink decode failed")
-        return
-      }
-      let annotated = self.annotatePayload(payload, isLinkMe: true, cid: cid)
-      self.debugLog("Deeplink payload received", extra: ["linkId": annotated.linkId ?? "none"])
-      if self.handleForcedWebRedirect(annotated) { return }
-      self.emit(payload: annotated)
-    }.resume()
+    resolveCidWithCompletion(cid) { _ in }
   }
 
-  private func resolveUniversalLink(_ urlIn: URL) {
+  private func resolveUniversalLink(_ url: URL) {
     guard let cfg = config else { return }
-    let url = cfg.baseUrl.appendingPathComponent("api/deeplink/resolve-url")
-    var req = URLRequest(url: url)
-    req.timeoutInterval = requestTimeout
-    req.httpMethod = "POST"
-    setHeaders(on: &req)
-    var body: [String: Any] = ["url": urlIn.absoluteString]
-    if cfg.sendDeviceInfo, let dev = buildDevicePayload() { body["device"] = dev }
-    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    debugLog(
-      "POST /api/deeplink/resolve-url",
-      extra: ["baseUrl": cfg.baseUrl.absoluteString, "url": urlIn.absoluteString]
-    )
-    urlSession.dataTask(with: req) { [weak self] data, resp, err in
-      if let err = err {
-        self?.debugLog("Resolve-url error", extra: ["error": err.localizedDescription])
-        return
-      }
-      guard let http = resp as? HTTPURLResponse else {
-        self?.debugLog("Resolve-url missing response")
-        return
-      }
-      if !(200..<300).contains(http.statusCode) {
-        let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        if self?.isDomainNotFound(body) == true, let fallback = self?.buildBasicUniversalPayload(url: urlIn) {
-          self?.debugLog("Resolve-url non-linkme", extra: ["url": urlIn.absoluteString])
-          self?.emit(payload: fallback)
-          return
-        }
-        self?.debugLog("Resolve-url HTTP error", extra: ["status": http.statusCode, "body": body])
-        return
-      }
-      guard let self = self, let data = data,
-        let payload = self.decodePayload(data)
-      else {
-        self?.debugLog("Resolve-url decode failed")
-        return
-      }
-      let annotated = self.annotatePayload(payload, isLinkMe: true)
-      self.debugLog("Resolve-url payload received", extra: ["linkId": annotated.linkId ?? "none"])
-      if self.handleForcedWebRedirect(annotated) { return }
-      self.emit(payload: annotated)
-    }.resume()
+    var request = URLRequest(url: cfg.baseUrl.appendingPathComponent("api/deeplink/resolve-url"))
+    request.timeoutInterval = cfg.requestTimeout ?? defaultRequestTimeout
+    request.httpMethod = "POST"
+    setHeaders(on: &request)
+    var body: [String: Any] = ["url": url.absoluteString]
+    if cfg.sendDeviceInfo, let device = buildDevicePayload() { body["device"] = device }
+    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    requestPayload(request, fallbackURL: url) { _ in }
   }
+
+  deinit { transport.cancelAll() }
 
   // Build device payload with consent-aware identifiers.
   private func buildDevicePayload() -> [String: Any]? {
@@ -527,8 +557,9 @@ public final class LinkMe: @unchecked Sendable {
     }
     if let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String { dev["buildNumber"] = b }
     #if canImport(UIKit)
-      dev["osVersion"] = UIDevice.current.systemVersion
-      dev["deviceModel"] = UIDevice.current.model
+      let device = MainActor.assumeIsolated { (UIDevice.current.systemVersion, UIDevice.current.model) }
+      dev["osVersion"] = device.0
+      dev["deviceModel"] = device.1
     #endif
     dev["locale"] = Locale.current.identifier
     dev["timezone"] = TimeZone.current.identifier
@@ -536,7 +567,7 @@ public final class LinkMe: @unchecked Sendable {
     if cfg.includeVendorId {
       consent["vendor"] = true
       #if canImport(UIKit)
-        if let idfv = UIDevice.current.identifierForVendor?.uuidString {
+        if let idfv = MainActor.assumeIsolated({ UIDevice.current.identifierForVendor?.uuidString }) {
           dev["id_type"] = "idfv"
           dev["device_id"] = idfv
         }
@@ -593,11 +624,12 @@ public final class LinkMe: @unchecked Sendable {
     req.setValue("application/json", forHTTPHeaderField: "Accept")
   }
 
-  private func emit(payload: LinkPayload) {
-    queue.async { [weak self] in
-      guard let self = self else { return }
-      self.lastPayload = payload
-      for h in self.listeners.values { h(payload) }
+  private func emit(payload: LinkPayload, generation expected: UInt64) {
+    guard isCurrent(expected), payload.navigationAllowed != false else { return }
+    lastPayload = payload
+    for token in listenerOrder {
+      guard isCurrent(expected) else { break }
+      listeners[token]?(payload)
     }
   }
 
@@ -613,7 +645,14 @@ public final class LinkMe: @unchecked Sendable {
       forceRedirectWeb: payload.forceRedirectWeb,
       webFallbackUrl: payload.webFallbackUrl,
       cid: payload.cid ?? cid,
-      duplicate: payload.duplicate
+      duplicate: payload.duplicate,
+      claimId: payload.claimId,
+      claimMethod: payload.claimMethod,
+      matchConfidence: payload.matchConfidence,
+      attributionStatus: payload.attributionStatus,
+      contractVersion: payload.contractVersion,
+      claimPolicyVersion: payload.claimPolicyVersion,
+      navigationAllowed: payload.navigationAllowed
     )
   }
 
@@ -621,7 +660,7 @@ public final class LinkMe: @unchecked Sendable {
     guard let payload = try? JSONDecoder().decode(LinkPayload.self, from: data) else { return nil }
     let hasField = payload.cid != nil || payload.linkId != nil || payload.path != nil || payload.params != nil ||
       payload.utm != nil || payload.custom != nil || payload.url != nil ||
-      payload.isLinkMe != nil || payload.duplicate != nil || payload.forceRedirectWeb != nil || payload.webFallbackUrl != nil
+      payload.isLinkMe != nil || payload.duplicate != nil || payload.forceRedirectWeb != nil || payload.webFallbackUrl != nil || (payload.navigationAllowed == false && payload.claimId?.isEmpty == false)
     return hasField ? payload : nil
   }
 
@@ -639,21 +678,18 @@ public final class LinkMe: @unchecked Sendable {
     )
   }
 
-  private func handleForcedWebRedirect(_ payload: LinkPayload) -> Bool {
-    #if canImport(UIKit)
-      guard payload.forceRedirectWeb == true else { return false }
-      guard let raw = payload.webFallbackUrl, let target = URL(string: raw), !raw.isEmpty else {
-        debugLog("force_web.enabled_but_missing_url", extra: ["linkId": payload.linkId ?? "none"])
-        return false
+  private func handleForcedWebRedirect(_ payload: LinkPayload, generation expected: UInt64) -> Bool {
+    if payload.navigationAllowed == false { return true }
+    guard payload.forceRedirectWeb == true else { return false }
+    guard let raw = payload.webFallbackUrl, !raw.isEmpty, let target = URL(string: raw) else { return false }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.withState {
+        guard self.isCurrent(expected) else { return }
+        self.openExternalURL(target)
       }
-      DispatchQueue.main.async {
-        UIApplication.shared.open(target, options: [:], completionHandler: nil)
-      }
-      debugLog("force_web.browser_open", extra: ["linkId": payload.linkId ?? "none", "url": target.absoluteString])
-      return true
-    #else
-      return false
-    #endif
+    }
+    return true
   }
 
   private func splitQueryItems(_ items: [URLQueryItem]?) -> ([String: String]?, [String: String]?) {
@@ -679,8 +715,13 @@ public final class LinkMe: @unchecked Sendable {
 
   #if canImport(UIKit)
     private func tryReadPasteboardToken() {
-      guard let cid = readPasteboardCid() else { return }
-      resolveCid(cid)
+      let expected = generation
+      DispatchQueue.main.async { [weak self] in
+        self?.withState {
+          guard let self, self.isCurrent(expected), let cid = self.readPasteboardCid() else { return }
+          self.resolveCid(cid)
+        }
+      }
     }
     
     /// Reads a LinkMe cid from pasteboard.
@@ -752,4 +793,203 @@ public final class LinkMe: @unchecked Sendable {
       debugLog("Cleared consumed pasteboard cid", extra: ["cid": cid])
     }
   #endif
+}
+
+// MARK: - Optional native wrapper lifecycle contract
+// These Objective-C selectors let a wrapper detect support before enabling the
+// protocol, without requiring a newer core's Swift Config initializer to compile.
+extension LinkMe {
+  private struct LifecycleHeader: Sendable {
+    let owner: String
+    let generation: Int
+  }
+
+  private func resetLifecycleOwner() {
+    lifecycleOwner = nil
+    lifecycleClientGeneration = 0
+    lifecycleLastCommand = nil
+  }
+
+  private func lifecycleInteger(_ value: Any?) -> Int? {
+    guard let number = value as? NSNumber,
+          CFGetTypeID(number) != CFBooleanGetTypeID(),
+          let integer = Int(number.stringValue), integer >= 0, integer <= 9_007_199_254_740_991 else { return nil }
+    return integer
+  }
+
+  private func lifecycleHeader(_ args: NSDictionary) -> LifecycleHeader? {
+    guard lifecycleInteger(args["contractVersion"]) == 1,
+          let owner = args["ownerId"] as? String, !owner.isEmpty, owner.utf8.count <= 128,
+          let generation = lifecycleInteger(args["clientGeneration"]) else { return nil }
+    return LifecycleHeader(owner: owner, generation: generation)
+  }
+
+  private func lifecycleReply(_ header: LifecycleHeader?, error: String? = nil, duplicate: Bool = false) -> [String: Any] {
+    var result: [String: Any] = ["contractVersion": 1, "ok": error == nil]
+    if let header { result["ownerId"] = header.owner; result["clientGeneration"] = header.generation }
+    if let error { result["error"] = error }
+    if duplicate { result["duplicate"] = true }
+    return result
+  }
+
+  private func lifecycleFrame(_ header: LifecycleHeader, payload: LinkPayload?) -> NSDictionary {
+    var result = lifecycleReply(header)
+    if let payload, let data = try? JSONEncoder().encode(payload),
+       let json = try? JSONSerialization.jsonObject(with: data) { result["payload"] = json }
+    else { result["payload"] = NSNull() }
+    return result as NSDictionary
+  }
+
+  private func recordLifecycle(_ header: LifecycleHeader, signature: Data) {
+    lifecycleKnownGenerations[header.owner] = header.generation
+    lifecycleOwnerOrder.removeAll { $0 == header.owner }
+    lifecycleOwnerOrder.append(header.owner)
+    if lifecycleOwnerOrder.count > 64 { lifecycleKnownGenerations.removeValue(forKey: lifecycleOwnerOrder.removeFirst()) }
+    lifecycleLastCommand = (header.owner, header.generation, signature)
+    lifecycleClientGeneration = header.generation
+  }
+
+  @objc public func linkmeLifecycleVersion() -> NSNumber { 1 }
+
+  @objc(linkmeLifecycle:)
+  public func linkmeLifecycle(_ args: NSDictionary) -> NSDictionary {
+    guard let header = lifecycleHeader(args), let action = args["action"] as? String else {
+      return lifecycleReply(nil, error: "invalid_args") as NSDictionary
+    }
+    var normalized: [String: Any] = ["action": action]
+    var preparedConfig: Config?
+    var identity: String?
+    var consent = false
+    switch action {
+    case "configure":
+      guard let raw = args["baseUrl"] as? String, let url = URL(string: raw),
+            ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host?.isEmpty == false,
+            url.query == nil, url.fragment == nil,
+            let timeout = lifecycleInteger(args["requestTimeoutMs"] is NSNull ? 15000 : (args["requestTimeoutMs"] ?? 15000)), timeout > 0, timeout <= 2_147_483_647 else {
+        return lifecycleReply(header, error: "invalid_args") as NSDictionary
+      }
+      for key in ["sendDeviceInfo", "includeVendorId", "includeAdvertisingId", "debug"] {
+        if let value = args[key], !(value is NSNull), !(value is NSNumber && CFGetTypeID(value as! NSNumber) == CFBooleanGetTypeID()) {
+          return lifecycleReply(header, error: "invalid_args") as NSDictionary
+        }
+      }
+      for key in ["appId", "appKey"] {
+        if let value = args[key], !(value is NSNull), !(value is String) { return lifecycleReply(header, error: "invalid_args") as NSDictionary }
+      }
+      let config = Config(baseUrl: url, appId: args["appId"] as? String, appKey: args["appKey"] as? String,
+                          sendDeviceInfo: args["sendDeviceInfo"] as? Bool ?? true,
+                          includeVendorId: args["includeVendorId"] as? Bool ?? true,
+                          includeAdvertisingId: args["includeAdvertisingId"] as? Bool ?? false,
+                          debug: args["debug"] as? Bool ?? false, requestTimeout: Double(timeout) / 1000)
+      preparedConfig = config
+      normalized.merge(["baseUrl": raw, "appId": config.appId as Any? ?? NSNull(), "appKey": config.appKey as Any? ?? NSNull(),
+                        "sendDeviceInfo": config.sendDeviceInfo, "includeVendorId": config.includeVendorId,
+                        "includeAdvertisingId": config.includeAdvertisingId, "debug": config.debug, "requestTimeoutMs": timeout]) { _, new in new }
+    case "setUserId":
+      guard args.allKeys.contains(where: { ($0 as? String) == "userId" }), args["userId"] is String || args["userId"] is NSNull else {
+        return lifecycleReply(header, error: "invalid_args") as NSDictionary
+      }
+      identity = args["userId"] as? String
+      if let identity, identity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return lifecycleReply(header, error: "invalid_args") as NSDictionary }
+      normalized["userId"] = identity as Any? ?? NSNull()
+    case "setAdvertisingConsent":
+      guard let value = args["granted"] as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else {
+        return lifecycleReply(header, error: "invalid_args") as NSDictionary
+      }
+      consent = value.boolValue; normalized["granted"] = consent
+    case "cancelPendingRequests", "dispose", "setReady": break
+    case "track":
+      guard let event = args["event"] as? String, !event.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            args["properties"] == nil || args["properties"] is NSNull || args["properties"] is [String: Any] else {
+        return lifecycleReply(header, error: "invalid_args") as NSDictionary
+      }
+    default: return lifecycleReply(header, error: "unsupported_action") as NSDictionary
+    }
+    guard let signature = try? JSONSerialization.data(withJSONObject: normalized, options: .sortedKeys) else {
+      return lifecycleReply(header, error: "invalid_args") as NSDictionary
+    }
+    return withState {
+      let mutation = !["track", "setReady"].contains(action)
+      if mutation, let known = lifecycleKnownGenerations[header.owner] {
+        if header.generation < known { return lifecycleReply(header, error: "stale_generation") as NSDictionary }
+        if header.generation == known {
+          if let last = lifecycleLastCommand, last.owner == header.owner, last.generation == header.generation, last.signature == signature {
+            return lifecycleReply(header, duplicate: true) as NSDictionary
+          }
+          return lifecycleReply(header, error: "generation_conflict") as NSDictionary
+        }
+      }
+      if action == "configure" {
+        guard lifecycleOwner == nil || lifecycleOwner == header.owner else { return lifecycleReply(header, error: "owner_conflict") as NSDictionary }
+        configure(config: preparedConfig!)
+        lifecycleOwner = header.owner
+      } else {
+        guard lifecycleOwner == header.owner, config != nil else { return lifecycleReply(header, error: "owner_changed") as NSDictionary }
+        if !mutation, header.generation != lifecycleClientGeneration { return lifecycleReply(header, error: "stale_generation") as NSDictionary }
+        switch action {
+        case "cancelPendingRequests": invalidateCurrentWork()
+        case "dispose": dispose()
+        case "setUserId": invalidateCurrentWork(); userId = identity
+        case "setAdvertisingConsent": invalidateCurrentWork(); advertisingConsentEnabled = consent
+        case "setReady": setReady()
+        case "track": track(event: args["event"] as! String, props: args["properties"] as? [String: Any])
+        default: break
+        }
+      }
+      if mutation { recordLifecycle(header, signature: signature) }
+      return lifecycleReply(header) as NSDictionary
+    }
+  }
+
+  @objc(linkmeLifecycleRead:completion:)
+  public func linkmeLifecycleRead(_ args: NSDictionary, completion: @escaping (NSDictionary) -> Void) {
+    let callback = CallbackBox(completion)
+    guard let header = lifecycleHeader(args), let action = args["action"] as? String,
+          ["getInitialLink", "claimDeferredIfAvailable"].contains(action) else {
+      let message = lifecycleReply(nil, error: "invalid_args") as NSDictionary
+      let box = CallbackBox<Bool> { _ in callback.call(message) }
+      queue.async { box.call(false) }
+      return
+    }
+    withState {
+      guard lifecycleOwner == header.owner, config != nil, lifecycleClientGeneration == header.generation else {
+        let box = CallbackBox<Bool> { _ in callback.call(self.lifecycleReply(header, error: "owner_changed") as NSDictionary) }
+        queue.async { box.call(false) }
+        return
+      }
+      let deliver: (LinkPayload?) -> Void = { [weak self] payload in
+        guard let self else {
+          callback.call(["contractVersion": 1, "ok": false, "ownerId": header.owner, "clientGeneration": header.generation, "error": "disposed"])
+          return
+        }
+        self.withState {
+          guard self.lifecycleOwner == header.owner, self.lifecycleClientGeneration == header.generation else {
+            callback.call(self.lifecycleReply(header, error: "owner_changed") as NSDictionary)
+            return
+          }
+          callback.call(self.lifecycleFrame(header, payload: payload))
+        }
+      }
+      if action == "getInitialLink" { getInitialLink(completion: deliver) }
+      else { claimDeferredIfAvailable(completion: deliver) }
+    }
+  }
+
+  @objc(linkmeLifecycleListen:)
+  public func linkmeLifecycleListen(_ listener: @escaping (NSDictionary) -> Void) -> NSString {
+    withState {
+      let token = UUID().uuidString
+      let box = CallbackBox(listener)
+      lifecycleSubscriptions[token] = addListener { [weak self] payload in
+        guard let self, let owner = self.lifecycleOwner else { return }
+        box.call(self.lifecycleFrame(LifecycleHeader(owner: owner, generation: self.lifecycleClientGeneration), payload: payload))
+      }
+      return token as NSString
+    }
+  }
+
+  @objc(linkmeLifecycleUnlisten:)
+  public func linkmeLifecycleUnlisten(_ token: NSString) {
+    withState { lifecycleSubscriptions.removeValue(forKey: token as String)?() }
+  }
 }

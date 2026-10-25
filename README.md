@@ -154,3 +154,88 @@ The `ExampleApp/` directory contains a runnable SwiftUI sample. Update `ExampleA
 ## License
 
 Apache-2.0
+
+## Claim metadata (unreleased)
+
+Updated Edge claims can include `claimId`, `claimMethod`, `matchConfidence`,
+`attributionStatus`, `contractVersion`, and `claimPolicyVersion`. These optional
+fields are preserved in the payload. Treat `fingerprint_exact` / `inferred` as
+heuristic attribution, not a verified install or authenticated identity.
+Replaying a CID returns its saved outcome; `duplicate` is a deprecated legacy
+projection and must not suppress a new link navigation based on shared IP/UA.
+
+Supply your app ID for deferred matching. New apps have fingerprint fallback
+disabled; enable inferred attribution explicitly in app settings if appropriate.
+Enabled matching requires a unique exact IP/UA candidate within 30 minutes.
+Explicit CID and Play referrer claims use the deterministic 72-hour token window,
+subject to link expiry and current app/link/domain policy.
+
+
+Fingerprint matches return campaign/claim metadata with `navigationAllowed: false`.
+They withhold the CID, link ID, path, custom data, query parameters and destination
+URLs. The SDK suppresses app-routing callbacks and automatic browser launches for
+these responses. Web callers can inspect returned metadata explicitly; native
+routing APIs may return no link. A claim receipt is not a redeemable link token.
+An independently supplied valid CID/referrer can still authorize navigation with
+`navigationAllowed: true`; it retains the original claim receipt and attribution
+classification rather than generating another claim.
+
+## Tracking credentials and acceptance (unreleased Edge)
+
+Configure an app ID and a key with `can_ingest` for client telemetry. In Portal,
+select **Client analytics and link reading**; it cannot manage links, settings,
+or keys, and cannot read private management/visitor diagnostics. A read-only key cannot ingest events. Both event routes require validated
+credentials even when link resolution permits optional keys.
+
+The existing `track` API uses the legacy `/api/app-events` route. Its return does
+not prove delivery, durable webhook acknowledgement, or a verified conversion.
+The SDK currently has no durable telemetry queue and does not promise event-ID
+retry semantics. New Edge stores legacy events with app scope; an omitted event
+ID receives a server ID, so calling `track` again creates another event. Optional
+`userId` is a caller-provided pseudonym, not authenticated identity.
+
+For explicit persistence receipts and safe HTTP retries, `/api/app-events/v1`
+accepts a versioned envelope with a stable `eventId`, `occurredAt`, SDK/version,
+platform, consent and structured properties. Reuse the same event ID and content
+on retry; a successful receipt is 202, changed content is 409. The route requires
+`can_ingest`, bounds the body to 32 KiB, and rate-limits by app. Claim events are
+server-owned. This SDK has not yet adopted the versioned sender/queue contract.
+
+## Request lifecycle (unreleased)
+
+`LinkMe.Config` accepts `requestTimeout` in seconds. The default is 15 seconds for
+the entire HTTP operation, including response-body reception. A positive finite
+value up to 2147483.647 seconds overrides it; invalid values fall back to 15 to
+preserve the nonthrowing configuration initializer. Deferred claims, explicit
+CID/URL resolution and tracking use the same deadline/task owner.
+
+`LinkMe.shared.cancelPendingRequests()` cancels active network tasks and invalidates
+queued results/browser launches; subsequent requests remain usable. Reconfigure,
+identity changes and `dispose()` also invalidate pending work. App reconfiguration
+clears the saved payload, identity and attribution context. `dispose()` additionally
+clears configuration, pending URLs and listeners. No automatic retry is added;
+cancelling a caller cannot retract a mutation already accepted by Edge.
+
+Listeners and payload completions run on the SDK's serial background delivery
+queue. Browser opening, UIKit device metadata and clipboard access run on main with a current
+lifecycle check. Listeners are called in subscription order, persist through
+reconfigure and do not replay automatically. `getInitialLink` explicitly reads the
+current saved payload. A reentrant lifecycle change stops later listeners and
+returns no old payload to the pending completion. Listener removal is synchronous
+and idempotent. A URL received before initial configuration is queued once.
+
+A valid forced-web result opens the platform browser on iOS/macOS and returns no
+app-routing payload; inferred metadata cannot launch a browser or reach routing
+listeners. macOS opening now occurs in the core rather than requiring a wrapper.
+Actual browser return/association loops, physical clipboard permissions, older OS
+versions and published wrapper/core combinations still need qualification.
+
+
+The local core also exposes lifecycle protocol V1 for wrappers that discover
+support at runtime. Commands and payload frames carry an opaque owner and client
+generation; control retries do not cancel newer work, and foreign/stale owners
+cannot read payloads. Direct typed-core lifecycle/identity/changed advertising
+consent calls withdraw wrapper ownership. Changed advertising consent also
+invalidates pending work. This does not implement all collection controls.
+Flutter public Dart integration with the native channel adapters and coordinated
+published core dependencies remain pending; the current Flutter pins do not provide this protocol.
