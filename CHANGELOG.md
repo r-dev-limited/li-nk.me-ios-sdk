@@ -2,6 +2,19 @@
 
 All notable changes to the LinkMe iOS SDK.
 
+## Unreleased
+
+- Expose runtime-discoverable wrapper lifecycle protocol V1 with owner/generation guards, idempotent control replay and scoped read/listener frames. Native Flutter channel integration and coordinated release pins remain pending.
+- Invalidate pending work when advertising consent changes; direct native lifecycle/identity changes withdraw wrapper ownership.
+
+- Add a public total HTTP `requestTimeout`, active task cancellation and `dispose()`. App/identity changes invalidate queued delivery and reset app context; claims settle once despite timeout/cancellation races.
+- Serialize listener/completion delivery, preserve subscription order, and guard reentrant lifecycle changes and scheduled main-thread browser, device-metadata and clipboard operations.
+- Handle forced-web opening in the macOS core, suppressing app-route callbacks and completion payloads as on iOS. Wrapper release dependencies remain unchanged.
+
+- Preserve optional `navigationAllowed` and suppress routing callbacks/browser launches when false. Accept campaign-only inferred receipts without exposing a CID or private route.
+
+- Preserve additive claim ID, method, confidence, attribution status, payload contract version, and claim policy version in routing payloads.
+
 ## 0.2.16
 
 - Adds an explicit 15-second deadline to SDK requests so offline or stalled transports cannot wait indefinitely.
